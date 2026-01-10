@@ -55,7 +55,7 @@ twin peaks programming language
 ## Массивы
 Объявление массива
 ```
-    <identifier>[N]type;
+    <identifier> type[N];
 ```
 
 ```
