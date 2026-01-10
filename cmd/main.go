@@ -2,14 +2,31 @@ package main
 
 import (
 	"fmt"
+	"strings"
 	"twin-peaks-programming-language/internal/lexer"
+	"twin-peaks-programming-language/internal/parser"
 )
 
 func main() {
-	code := `fn mamba(x int, y int){return x+y*x;}; //хуета
-f int;
-f = 3 + 9;
-print(f);`
-	nl := lexer.NewLexer(code)
-	fmt.Println(nl.Tokenize())
+	code := factorial
+	l := lexer.NewLexer(code)
+	tokens, err := l.Tokenize()
+	tokStrs := make([]string, len(tokens))
+	for i, tok := range tokens {
+		tokStrs[i] = tok.String()
+	}
+	fmt.Println(strings.Join(tokStrs, "\n"), err)
+	if err != nil {
+		return
+	}
+
+	p := parser.NewParser(tokens)
+	ast, err := p.ParseProgram()
+	if err != nil {
+		fmt.Printf("Parser error: %v\n", err)
+		return
+	}
+
+	// Вывод AST
+	fmt.Println(ast.String())
 }
