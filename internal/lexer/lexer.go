@@ -156,6 +156,9 @@ func (l *Lexer) NextToken() (Token, error) {
 			l.readChar()
 			tok.Type = And
 			tok.Text = string(ch) + string(l.ch)
+		} else {
+			tok.Type = AddressOf
+			tok.Text = string(l.ch)
 		}
 	case '|':
 		if l.peekChar() == '|' {
@@ -235,12 +238,13 @@ func (l *Lexer) Tokenize() ([]Token, error) {
 
 	for {
 		tok, err := l.NextToken()
-		if tok.Type == Invalid && tok.Text == "" {
-			break
-		}
+
 		tokens = append(tokens, tok)
 		if err != nil {
 			return tokens, err
+		}
+		if tok.Type == Invalid && tok.Text == "" {
+			break
 		}
 	}
 
@@ -257,6 +261,7 @@ func isDigit(ch byte) bool {
 
 var keywords = map[string]TokenType{
 	"int":      Int,
+	"uint":     Uint,
 	"float":    Float,
 	"string":   String,
 	"bool":     Bool,
@@ -276,4 +281,8 @@ func lookupIdent(ident string) TokenType {
 		return tok
 	}
 	return Identifier
+}
+
+func IsTypeToken(tok Token) bool {
+	return tok.Type == Int || tok.Type == Uint || tok.Type == Float || tok.Type == String || tok.Type == Bool
 }

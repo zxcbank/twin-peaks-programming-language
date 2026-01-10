@@ -12,6 +12,7 @@ const (
 	ConstText
 
 	Int
+	Uint
 	Float
 	String
 	Bool
@@ -43,6 +44,7 @@ const (
 	Mul
 	Div
 	Mod
+	AddressOf
 
 	LParen
 	RParen
@@ -54,11 +56,12 @@ const (
 	Comma
 )
 
-var tokenNames = map[TokenType]string{
+var TokenNames = map[TokenType]string{
 	Invalid:    "Invalid",
 	ConstNum:   "ConstNum",
 	ConstText:  "ConstText",
 	Int:        "Int",
+	Uint:       "Uint",
 	Float:      "Float",
 	String:     "String",
 	Bool:       "Bool",
@@ -105,9 +108,9 @@ type Token struct {
 }
 
 func (t Token) String() string {
-	name, ok := tokenNames[t.Type]
+	name, ok := TokenNames[t.Type]
 	if !ok {
 		name = fmt.Sprintf("Unknown(%d)", t.Type)
 	}
-	return fmt.Sprintf("Token{Type:%s, Text:%q, Pos:%d, Line:%d} \n", name, t.Text, t.Pos, t.Line)
+	return fmt.Sprintf("Token{Type:%s, Text:%q, Pos:%d, Line:%d}", name, t.Text, t.Pos, t.Line)
 }
