@@ -5,6 +5,7 @@ import (
 	"strings"
 	"twin-peaks-programming-language/internal/lexer"
 	"twin-peaks-programming-language/internal/parser"
+	"twin-peaks-programming-language/internal/runtime"
 )
 
 func main() {
@@ -28,5 +29,8 @@ func main() {
 	}
 
 	// Вывод AST
-	fmt.Println(ast.String())
+	fmt.Println(ast)
+	fmt.Println()
+	runner := runtime.NewRunner(ast)
+	runner.Run()
 }

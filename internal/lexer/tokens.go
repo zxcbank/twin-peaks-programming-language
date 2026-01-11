@@ -98,6 +98,7 @@ var TokenNames = map[TokenType]string{
 	RBracket:   "RBracket",
 	Semicolon:  "Semicolon",
 	Comma:      "Comma",
+	AddressOf:  "AddressOf",
 }
 
 type Token struct {
