@@ -1,0 +1,482 @@
+package bytecode
+
+import (
+	"fmt"
+	"strconv"
+	"twin-peaks-programming-language/internal/parser"
+)
+
+// Компилятор AST в байт-код
+type Compiler struct {
+	bytecode     *Bytecode
+	currentScope *Scope
+	currentFunc  *FuncContext
+	funcTable    map[string]*FunctionInfo
+	labels       map[string]int
+	labelCounter int
+}
+
+// Область видимости
+type Scope struct {
+	variables map[string]int // имя -> индекс локальной переменной
+	parent    *Scope
+}
+
+func NewCompiler() *Compiler {
+	return &Compiler{
+		bytecode: &Bytecode{
+			Instructions: []Instruction{},
+			Constants:    []interface{}{},
+			FuncTable:    make(map[string]*FunctionInfo),
+		},
+		currentScope: &Scope{variables: make(map[string]int)},
+		funcTable:    make(map[string]*FunctionInfo),
+		labels:       make(map[string]int),
+		labelCounter: 0,
+	}
+}
+
+func (c *Compiler) Compile(ast *parser.ASTNode) (*Bytecode, error) {
+	if ast.Type != parser.NodeProgram {
+		return nil, fmt.Errorf("expected Program node")
+	}
+
+	// Первый проход: собираем информацию о функциях
+	for _, child := range ast.Children {
+		if child.Type == parser.NodeFuncDecl {
+			funcName := child.Value.(string)
+			c.bytecode.FuncTable[funcName] = &FunctionInfo{
+				Name:       funcName,
+				Address:    len(c.bytecode.Instructions),
+				ParamCount: len(child.Children[0].Children),
+			}
+		}
+	}
+
+	// Второй проход: компилируем код
+	for _, child := range ast.Children {
+		if err := c.compileNode(child); err != nil {
+			return nil, err
+		}
+	}
+
+	// Добавляем HALT в конце программы
+	c.emit(OP_HALT)
+
+	return c.bytecode, nil
+}
+
+func (c *Compiler) compileNode(node *parser.ASTNode) error {
+	switch node.Type {
+	case parser.NodeVarDecl:
+		return c.compileVarDecl(node)
+	case parser.NodeBinaryOp:
+		return c.compileBinaryOp(node)
+	case parser.NodeIdentifier:
+		return c.compileIdentifier(node)
+	case parser.NodeLiteral:
+		return c.compileLiteral(node)
+	case parser.NodeCall:
+		return c.compileCall(node)
+	case parser.NodeIf:
+		return c.compileIf(node)
+	case parser.NodeFor:
+		return c.compileFor(node)
+	case parser.NodeReturn:
+		return c.compileReturn(node)
+	case parser.NodeFuncDecl:
+		return c.compileFuncDecl(node)
+	case parser.NodeBlock:
+		return c.compileBlock(node)
+	default:
+		return fmt.Errorf("unsupported node type: %v", node.Type)
+	}
+}
+
+func (c *Compiler) compileVarDecl(node *parser.ASTNode) error {
+	if len(node.Children) < 2 {
+		return fmt.Errorf("invalid VarDecl node")
+	}
+
+	// Получаем имя переменной
+	varName := node.Children[0].Value.(string)
+
+	// Резервируем место для переменной
+	localIndex := c.allocateLocal(varName)
+
+	// Если есть инициализация
+	if len(node.Children) > 2 {
+		// Компилируем выражение инициализации
+		if err := c.compileNode(node.Children[2]); err != nil {
+			return err
+		}
+		// Сохраняем результат в переменную
+		c.emit(OP_STORE, localIndex)
+	}
+
+	return nil
+}
+
+func (c *Compiler) compileBinaryOp(node *parser.ASTNode) error {
+	if len(node.Children) < 2 {
+		return fmt.Errorf("invalid BinaryOp node")
+	}
+
+	op := node.Value.(string)
+
+	// Обработка присваивания
+	if op == "=" {
+		// Левый операнд должен быть идентификатором
+		left := node.Children[0]
+		if left.Type != parser.NodeIdentifier {
+			return fmt.Errorf("left side of assignment must be identifier")
+		}
+
+		varName := left.Value.(string)
+		localIndex, ok := c.currentScope.variables[varName]
+		if !ok {
+			return fmt.Errorf("variable not declared: %s", varName)
+		}
+
+		// Компилируем правую часть
+		if err := c.compileNode(node.Children[1]); err != nil {
+			return err
+		}
+
+		// Сохраняем в переменную
+		c.emit(OP_STORE, localIndex)
+		return nil
+	}
+
+	// Компилируем левый операнд
+	if err := c.compileNode(node.Children[0]); err != nil {
+		return err
+	}
+
+	// Компилируем правый операнд
+	if err := c.compileNode(node.Children[1]); err != nil {
+		return err
+	}
+
+	// Генерируем инструкцию операции
+	switch op {
+	case "+":
+		c.emit(OP_ADD)
+	case "-":
+		c.emit(OP_SUB)
+	case "*":
+		c.emit(OP_MUL)
+	case "/":
+		c.emit(OP_DIV)
+	case "%":
+		c.emit(OP_MOD)
+	case "==":
+		c.emit(OP_EQ)
+	case "!=":
+		c.emit(OP_NEQ)
+	case "<":
+		c.emit(OP_LT)
+	case "<=":
+		c.emit(OP_LE)
+	case ">":
+		c.emit(OP_GT)
+	case ">=":
+		c.emit(OP_GE)
+	case "&&":
+		c.emit(OP_AND)
+	case "||":
+		c.emit(OP_OR)
+	default:
+		return fmt.Errorf("unknown binary operator: %s", op)
+	}
+
+	return nil
+}
+
+func (c *Compiler) compileIdentifier(node *parser.ASTNode) error {
+	varName := node.Value.(string)
+	localIndex, ok := c.currentScope.variables[varName]
+	if !ok {
+		return fmt.Errorf("variable not found: %s", varName)
+	}
+	c.emit(OP_LOAD, localIndex)
+	return nil
+}
+
+func (c *Compiler) compileLiteral(node *parser.ASTNode) error {
+	value := node.Value.(string)
+
+	// Пробуем преобразовать в число
+	if intVal, err := strconv.ParseInt(value, 10, 64); err == nil {
+		constIndex := c.addConstant(int(intVal))
+		c.emit(OP_CONST, constIndex)
+	} else if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+		constIndex := c.addConstant(floatVal)
+		c.emit(OP_CONST, constIndex)
+	} else if value == "true" {
+		constIndex := c.addConstant(true)
+		c.emit(OP_CONST, constIndex)
+	} else if value == "false" {
+		constIndex := c.addConstant(false)
+		c.emit(OP_CONST, constIndex)
+	} else {
+		// Строковый литерал
+		constIndex := c.addConstant(value)
+		c.emit(OP_CONST, constIndex)
+	}
+
+	return nil
+}
+
+//func (c *Compiler) compileCall(node *parser.ASTNode) error {
+//	funcName := node.Value.(string)
+//
+//	// Компилируем аргументы
+//	for _, arg := range node.Children {
+//		if err := c.compileNode(arg); err != nil {
+//			return err
+//		}
+//	}
+//
+//	// Встроенные функции
+//	switch funcName {
+//	case "print":
+//		c.emit(OP_PRINT)
+//	default:
+//		// Проверяем, существует ли функция
+//		funcInfo, ok := c.bytecode.FuncTable[funcName]
+//		if !ok {
+//			return fmt.Errorf("function not found: %s", funcName)
+//		}
+//		c.emit(OP_CALL, funcInfo.Address)
+//	}
+//
+//	return nil
+//}
+
+func (c *Compiler) compileIf(node *parser.ASTNode) error {
+	if len(node.Children) < 2 {
+		return fmt.Errorf("invalid If node")
+	}
+
+	// Компилируем условие
+	if err := c.compileNode(node.Children[0]); err != nil {
+		return err
+	}
+
+	// Создаем метки
+	elseLabel := c.newLabel("else")
+	endLabel := c.newLabel("endif")
+
+	// Переход если false
+	c.emit(OP_JMP_IF_FALSE, elseLabel)
+
+	// Компилируем then-блок
+	if err := c.compileNode(node.Children[1]); err != nil {
+		return err
+	}
+
+	// Переход к концу
+	c.emit(OP_JMP, endLabel)
+
+	// Метка else
+	c.placeLabel(elseLabel)
+
+	// Компилируем else-блок если есть
+	if len(node.Children) > 2 {
+		if err := c.compileNode(node.Children[2]); err != nil {
+			return err
+		}
+	}
+
+	// Метка конца if
+	c.placeLabel(endLabel)
+
+	return nil
+}
+
+func (c *Compiler) compileFor(node *parser.ASTNode) error {
+	if len(node.Children) < 4 {
+		return fmt.Errorf("invalid For node")
+	}
+
+	// Создаем метки
+	loopStart := c.newLabel("loop_start")
+	loopEnd := c.newLabel("loop_end")
+	loopContinue := c.newLabel("loop_continue")
+
+	// Инициализация
+	if node.Children[0].Type != parser.NodeBlock {
+		if err := c.compileNode(node.Children[0]); err != nil {
+			return err
+		}
+	}
+
+	// Метка начала цикла
+	c.placeLabel(loopStart)
+
+	// Условие
+	if node.Children[1].Type != parser.NodeLiteral || node.Children[1].Value != "true" {
+		if err := c.compileNode(node.Children[1]); err != nil {
+			return err
+		}
+		c.emit(OP_JMP_IF_FALSE, loopEnd)
+	}
+
+	// Тело цикла
+	if err := c.compileNode(node.Children[3]); err != nil {
+		return err
+	}
+
+	// Метка для continue
+	c.placeLabel(loopContinue)
+
+	// Пост-итерация
+	if node.Children[2].Type != parser.NodeBlock {
+		if err := c.compileNode(node.Children[2]); err != nil {
+			return err
+		}
+	}
+
+	// Переход к началу
+	c.emit(OP_JMP, loopStart)
+
+	// Метка конца цикла
+	c.placeLabel(loopEnd)
+
+	return nil
+}
+
+//func (c *Compiler) compileReturn(node *parser.ASTNode) error {
+//	// Компилируем возвращаемое значение если есть
+//	if len(node.Children) > 0 {
+//		if err := c.compileNode(node.Children[0]); err != nil {
+//			return err
+//		}
+//	}
+//	c.emit(OP_RETURN)
+//	return nil
+//}
+
+//func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
+//	// Пока пропускаем компиляцию функций (можно реализовать позже)
+//	return nil
+//}
+
+func (c *Compiler) compileBlock(node *parser.ASTNode) error {
+	// Компилируем все statement'ы в блоке
+	for _, child := range node.Children {
+		if err := c.compileNode(child); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// Вспомогательные методы
+
+func (c *Compiler) emit(opcode byte, operands ...int) {
+	c.bytecode.Instructions = append(c.bytecode.Instructions, Instruction{
+		Opcode:   opcode,
+		Operands: operands,
+	})
+}
+
+func (c *Compiler) addConstant(value interface{}) int {
+	for i, v := range c.bytecode.Constants {
+		if v == value {
+			return i
+		}
+	}
+	c.bytecode.Constants = append(c.bytecode.Constants, value)
+	return len(c.bytecode.Constants) - 1
+}
+
+func (c *Compiler) allocateLocal(name string) int {
+	index := len(c.currentScope.variables)
+	c.currentScope.variables[name] = index
+	return index
+}
+
+func (c *Compiler) newLabel(prefix string) int {
+	label := c.labelCounter
+	c.labelCounter++
+	c.labels[fmt.Sprintf("%s_%d", prefix, label)] = -1 // -1 означает "еще не размещено"
+	return label
+}
+
+func (c *Compiler) placeLabel(label int) {
+	// Метки размещаются как инструкции с адресом текущей позиции
+	// В реальности метки - это не инструкции, а просто отметки в коде
+	// Для простоты храним их в отдельной таблице
+	for name, addr := range c.labels {
+		if addr == -1 {
+			c.labels[name] = len(c.bytecode.Instructions)
+			break
+		}
+	}
+}
+
+func (c *Compiler) compileCall(node *parser.ASTNode) error {
+	funcName := node.Value.(string)
+
+	// Проверяем, встроенная ли это функция
+	switch funcName {
+	case "print":
+		// Компилируем аргументы
+		for _, arg := range node.Children {
+			if err := c.compileNode(arg); err != nil {
+				return err
+			}
+		}
+		c.emit(OP_PRINT)
+		return nil
+	}
+
+	// Проверяем, существует ли функция
+	funcInfo, exists := c.funcTable[funcName]
+	if !exists {
+		return fmt.Errorf("undefined function: %s", funcName)
+	}
+
+	// Проверяем количество аргументов
+	if len(node.Children) != funcInfo.ParamCount {
+		return fmt.Errorf("function %s expects %d arguments, got %d",
+			funcName, funcInfo.ParamCount, len(node.Children))
+	}
+
+	// Компилируем аргументы в обратном порядке
+	// (для стековой архитектуры аргументы помещаются в обратном порядке)
+	for i := len(node.Children) - 1; i >= 0; i-- {
+		if err := c.compileNode(node.Children[i]); err != nil {
+			return err
+		}
+	}
+
+	// Вызов функции
+	c.emit(OP_CALL, funcInfo.Address)
+
+	return nil
+}
+
+// compileReturn теперь учитывает контекст функции
+func (c *Compiler) compileReturn(node *parser.ASTNode) error {
+	// Помечаем, что функция имеет return
+	if c.currentFunc != nil {
+		c.currentFunc.HasReturn = true
+	}
+
+	// Если есть возвращаемое значение
+	if len(node.Children) > 0 {
+		// Компилируем выражение
+		if err := c.compileNode(node.Children[0]); err != nil {
+			return err
+		}
+		c.emit(OP_RETURN)
+	} else {
+		// void return
+		c.emit(OP_RETURN_VOID)
+	}
+
+	return nil
+}

@@ -1,0 +1,77 @@
+package bytecode
+
+import "fmt"
+
+type Instruction struct {
+	Opcode   byte
+	Operands []int // сомнительно но окей
+	Line     int   // Для отладки
+}
+
+func (i Instruction) String() string {
+	opcodeNames := map[byte]string{
+		OP_CONST:        "CONST",
+		OP_LOAD:         "LOAD",
+		OP_STORE:        "STORE",
+		OP_ADD:          "ADD",
+		OP_SUB:          "SUB",
+		OP_MUL:          "MUL",
+		OP_DIV:          "DIV",
+		OP_MOD:          "MOD",
+		OP_EQ:           "EQ",
+		OP_NEQ:          "NEQ",
+		OP_LT:           "LT",
+		OP_LE:           "LE",
+		OP_GT:           "GT",
+		OP_GE:           "GE",
+		OP_AND:          "AND",
+		OP_OR:           "OR",
+		OP_NOT:          "NOT",
+		OP_JMP:          "JMP",
+		OP_JMP_IF_FALSE: "JMP_IF_FALSE",
+		OP_CALL:         "CALL",
+		OP_RETURN:       "RETURN",
+		OP_PRINT:        "PRINT",
+		OP_HALT:         "HALT",
+		OP_RETURN_VOID:  "RETURN_VOID",
+		OP_LOAD_ARG:     "LOAD_ARG",
+		OP_ENTER:        "ENTER",
+		OP_LEAVE:        "LEAVE",
+	}
+
+	name := opcodeNames[i.Opcode]
+	if name == "" {
+		name = fmt.Sprintf("UNKNOWN(%d)", i.Opcode)
+	}
+
+	if len(i.Operands) == 0 {
+		return fmt.Sprintf("%s", name)
+	}
+	return fmt.Sprintf("%s %v", name, i.Operands)
+}
+
+// Байт-код программы
+type Bytecode struct {
+	Instructions []Instruction
+	Constants    []interface{}
+	FuncTable    map[string]*FunctionInfo
+	programStart int
+}
+
+// Контекст функции
+type FuncContext struct {
+	Name        string
+	Address     int
+	ParamCount  int
+	HasReturn   bool
+	ReturnLabel int
+}
+
+// Информация о функции для таблицы
+type FunctionInfo struct {
+	Name       string
+	Address    int
+	ParamCount int
+	LocalCount int
+	ReturnType string
+}
