@@ -3,13 +3,14 @@ package main
 import (
 	"fmt"
 	"strings"
+
 	"twin-peaks-programming-language/internal/lexer"
 	"twin-peaks-programming-language/internal/parser"
 	"twin-peaks-programming-language/internal/runtime"
 )
 
 func main() {
-	code := factorial
+	code := math_expression_example
 	l := lexer.NewLexer(code)
 	tokens, err := l.Tokenize()
 	tokStrs := make([]string, len(tokens))

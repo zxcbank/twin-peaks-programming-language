@@ -24,8 +24,9 @@ func (r *Runner) Run() {
 }
 
 func (r *Runner) runNode(node *parser.ASTNode) {
+	fmt.Printf("Running node %v", node.Name()) // TODO:
 	for _, node := range node.Children {
 		r.runNode(node)
 	}
-	fmt.Printf("Running node %v", node.Name()) // TODO:
+
 }

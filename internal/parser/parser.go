@@ -701,7 +701,7 @@ func (p *Parser) ParseFor() (*ASTNode, error) {
 	var init *ASTNode
 	if !p.check(lexer.Semicolon) {
 		var err error
-		init, err = p.ParseStatement()
+		init, err = p.ParseExpression()
 		if err != nil {
 			return nil, err
 		}

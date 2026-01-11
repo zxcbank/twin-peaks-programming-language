@@ -22,6 +22,29 @@ print(f);`
 		result int;
 		result = factorial(20);
 	`
+
+	for_example = `x int;
+	for (x = 0; x > 10; x=x+1) {
+	print(x);
+	}`
+
+	math_expression_example = `x int;
+		y int;
+		y = 10;
+		x = 4 - (6 - y * y) / y;
+		print(x);`
+
+	if_else_full = `x int;
+		x  = 10;
+		y int;
+		y = 5;
+		
+		if (x < y) {
+		print(x);
+		} else {
+		print(y);
+		}
+	`
 	ex1 = `
 x int;
 x = 2 + 4;
