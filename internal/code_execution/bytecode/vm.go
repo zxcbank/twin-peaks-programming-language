@@ -26,9 +26,16 @@ type VM struct {
 	bytecode *Bytecode
 	stack    []Value
 	frames   []Frame
+	heap     []Array
 	ip       int // Instruction Pointer
 	sp       int // Stack Pointer
 	fp       int // Frame Pointer (index into frames slice)
+}
+
+type Array struct {
+	size           int
+	Array          []Value
+	referenceCount int //  ?? we had them heappas in twin-peaks-pr0gramming-lаn9ua9e
 }
 
 func NewVM(bytecode *Bytecode) *VM {
@@ -335,7 +342,63 @@ func (vm *VM) Run() error {
 					vm.fp = len(vm.frames) - 1
 				}
 			}
+		case OP_ARRAY_ALLOC:
+			arrLength, ok := vm.pop().Data.(int)
+			if !ok {
+				return fmt.Errorf("ARRAY_ALLOC expected intSize")
+			}
+			neccessaryIndex := len(vm.heap)
+			vm.heap = append(vm.heap, Array{arrLength, make([]Value, arrLength), 1})
 
+			localIndex := instr.Operands[0]
+			if vm.fp < 0 || vm.fp >= len(vm.frames) {
+				return fmt.Errorf("invalid frame pointer: %d", vm.fp)
+			}
+			// ensure locals capacity
+			currentFrame := &vm.frames[vm.fp]
+			currentFrame.ensureLocalsSize(localIndex + 1)
+			currentFrame.locals[localIndex] = Value{Data: neccessaryIndex}
+			vm.push(currentFrame.locals[localIndex])
+
+		case OP_ARRAY_STORE:
+			data := vm.pop()
+			arrIndex, ok := vm.pop().Data.(int)
+			if !ok {
+				return fmt.Errorf("ARRAY_STORE expected intSize")
+			}
+			localIndex := instr.Operands[0]
+
+			currentFrame := &vm.frames[vm.fp]
+			heapPointer, ok := currentFrame.locals[localIndex].Data.(int)
+			if !ok {
+				return fmt.Errorf("ARRAY_STORE expected intSize")
+			}
+			if arrIndex >= vm.heap[heapPointer].size {
+				return fmt.Errorf("index out of range: %d", arrIndex)
+			} else if arrIndex < 0 {
+				return fmt.Errorf("negative index: %d", arrIndex)
+			}
+			vm.heap[heapPointer].Array[arrIndex] = data
+
+		case OP_ARRAY_LOAD:
+			arrIndex, ok := vm.pop().Data.(int)
+			if !ok {
+				return fmt.Errorf("ARRAY_LOAD expected intSize")
+			}
+			localIndex := instr.Operands[0]
+
+			currentFrame := &vm.frames[vm.fp]
+			heapPointer, ok := currentFrame.locals[localIndex].Data.(int)
+			if !ok {
+				return fmt.Errorf("ARRAY_LOAD expected intSize")
+			}
+			if arrIndex >= vm.heap[heapPointer].size {
+				return fmt.Errorf("index out of range: %d", arrIndex)
+			} else if arrIndex < 0 {
+				return fmt.Errorf("negative index: %d", arrIndex)
+			}
+			data := vm.heap[heapPointer].Array[arrIndex]
+			vm.push(data)
 		default:
 			return fmt.Errorf("unknown opcode in instruction: %s", instr.String())
 		}

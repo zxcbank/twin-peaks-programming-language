@@ -37,6 +37,9 @@ func (i Instruction) String() string {
 		OP_LOAD_ARG:     "LOAD_ARG",
 		OP_ENTER:        "ENTER",
 		OP_LEAVE:        "LEAVE",
+		OP_ARRAY_ALLOC:  "ARRAY_ALLOC",
+		OP_ARRAY_LOAD:   "ARRAY_LOAD",
+		OP_ARRAY_STORE:  "ARRAY_STORE",
 	}
 
 	name := opcodeNames[i.Opcode]

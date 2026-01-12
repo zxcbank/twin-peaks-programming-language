@@ -30,6 +30,10 @@ const (
 	OP_LOAD_ARG // TODO: Подумать, нужно ли это
 	OP_ENTER    // TODO: Подумать, нужно ли это
 	OP_LEAVE    // TODO: Подумать, нужно ли это
+
+	OP_ARRAY_ALLOC
+	OP_ARRAY_LOAD
+	OP_ARRAY_STORE
 )
 
 // Типы значений в байт-коде

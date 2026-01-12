@@ -9,7 +9,7 @@ import (
 )
 
 func main() {
-	code := if_else_full
+	code := bubble_sort
 
 	// Лексический анализ
 	l := lexer.NewLexer(code)

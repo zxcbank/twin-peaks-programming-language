@@ -78,6 +78,10 @@ func (c *Compiler) compileNode(node *parser.ASTNode) error {
 	switch node.Type {
 	case parser.NodeVarDecl:
 		return c.compileVarDecl(node)
+	case parser.NodeArrayDecl:
+		return c.compileArrayDecl(node)
+	case parser.NodeArrayAccess: // неувязочка, имеется в виду что ArrayStore вызывается так и так в =, а вот NodeArrayAccess (x=array[i]) может быть вызван
+		return c.compileArrayLoad(node)
 	case parser.NodeBinaryOp:
 		return c.compileBinaryOp(node)
 	case parser.NodeIdentifier:
@@ -96,6 +100,7 @@ func (c *Compiler) compileNode(node *parser.ASTNode) error {
 		return c.compileFuncDecl(node)
 	case parser.NodeBlock:
 		return c.compileBlock(node)
+
 	default:
 		return fmt.Errorf("unsupported node type: \n%s", node.String())
 	}
@@ -125,6 +130,48 @@ func (c *Compiler) compileVarDecl(node *parser.ASTNode) error {
 	return nil
 }
 
+func (c *Compiler) compileArrayDecl(node *parser.ASTNode) error {
+	if len(node.Children) < 3 {
+		return fmt.Errorf("invalid ArrayDeclNode node")
+	}
+
+	arrayName := node.Children[0].Value.(string)
+
+	index_of_array := c.allocateLocal(arrayName)
+	err := c.compileNode(node.Children[1])
+	if err != nil {
+		return err
+	}
+
+	c.emit(OP_ARRAY_ALLOC, index_of_array)
+	c.emit(OP_STORE, index_of_array)
+
+	return nil
+}
+
+func (c *Compiler) compileArrayLoad(node *parser.ASTNode) error {
+
+	localIndex := c.currentScope.variables[node.Children[0].Value.(string)]
+	if err := c.compileNode(node.Children[1]); err != nil {
+		return err
+	}
+	c.emit(OP_ARRAY_LOAD, localIndex)
+
+	return nil
+}
+
+func (c *Compiler) compileArrayStore(l, r *parser.ASTNode) error {
+	localIndex := c.currentScope.variables[l.Children[0].Value.(string)]
+	if err := c.compileNode(l.Children[1]); err != nil {
+		return err
+	}
+	if err := c.compileNode(r); err != nil {
+		return err
+	}
+	c.emit(OP_ARRAY_STORE, localIndex)
+	return nil
+}
+
 func (c *Compiler) compileBinaryOp(node *parser.ASTNode) error {
 	if len(node.Children) < 2 {
 		return fmt.Errorf("invalid BinaryOp node")
@@ -136,6 +183,14 @@ func (c *Compiler) compileBinaryOp(node *parser.ASTNode) error {
 	if op == "=" {
 		// Левый операнд должен быть идентификатором
 		left := node.Children[0]
+		if left.Type == parser.NodeArrayAccess {
+			err := c.compileArrayStore(left, node.Children[1])
+			if err != nil {
+				return err
+			}
+			return nil
+		}
+
 		if left.Type != parser.NodeIdentifier {
 			return fmt.Errorf("left side of assignment must be identifier")
 		}
