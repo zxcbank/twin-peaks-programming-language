@@ -47,7 +47,7 @@ func NewVM(bytecode *Bytecode) *VM {
 	//})
 	return &VM{
 		bytecode: bytecode,
-		stack:    make([]Value, 1024*1024),
+		stack:    make([]Value, 1024*1024*1024),
 		frames:   frames,
 		ip:       bytecode.programStart,
 		sp:       -1,

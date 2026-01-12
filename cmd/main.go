@@ -9,10 +9,10 @@ import (
 )
 
 func main() {
-	code := bubble_sort
-
+	//code, err := io.ReadAll(os.Stdin)
+	code := quick_sort
 	// Лексический анализ
-	l := lexer.NewLexer(code)
+	l := lexer.NewLexer(string(code))
 	tokens, err := l.Tokenize()
 	if err != nil {
 		fmt.Printf("Lexer error: %v\n", err)

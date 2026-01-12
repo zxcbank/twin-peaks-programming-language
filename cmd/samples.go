@@ -93,6 +93,37 @@ print(arr[0]);
 	}
 	print(arr[100]);
 	`
+	sieve_of_eratosthenes = `
+		MAX int;
+		MAX = 1000000;
+		
+		primes int[MAX];
+		i int;
+		for (i=0; i<MAX; i=i+1) {
+			primes[i] = 1;
+		}
+		limit int;
+	    limit = MAX / 2 + 1;
+		for (i=2; i<limit; i=i+1) {
+			if (primes[i-1]) {
+				j int;
+
+				for (j=i*i; j<=MAX; j=j+i) {
+					primes[j-1] = 0;
+			  	}
+			}
+		}
+
+		count int;
+		count = 0;
+		for (i=2; i<=MAX; i=i+1) {
+			if (primes[i-1]) {
+			  print(i);
+			  count=count+1;
+			}
+		}
+		print(count);
+	`
 
 	bubble_sort = `	
 	fn bubble_sort(arr int, size int) {
@@ -110,7 +141,7 @@ print(arr[0]);
 		}
 	}
 	size_t int;
-	size_t = 100000;
+	size_t = 30000;
 	arr int[size_t];
 	t int;
 	for (t = 0; t < size_t; t = t+1) {
@@ -120,6 +151,64 @@ print(arr[0]);
 	//	print(arr[t]);
 	//}
 	bubble_sort(arr, size_t);
+	for (t = 0; t < size_t; t = t+1) {
+		print(arr[t]);
+	}
+	`
+
+	quick_sort = `
+	fn partition(arr int, low int, high int) {
+		pivot int;
+		pivot = arr[high]; // Опорный элемент - последний
+		i int; 
+		i = (low - 1);     // Индекс меньшего элемента
+		j int;
+		for (j = low; j <= high - 1; j = j + 1) {
+			if (arr[j] < pivot) {
+				i=i+1;
+				tmp int;
+				tmp = arr[i];
+				arr[i] = arr[j];
+				arr[j] = tmp;
+			}
+		}
+		tmp int;
+		tmp = arr[i+1];
+		arr[i+1] = arr[high];
+		arr[high] = tmp;
+		return i + 1;
+	}
+
+	fn quick_sort(arr int, low int, high int) {
+		if (low < high) {
+        	pi int; 
+			pi = partition(arr, low, high); // Индекс разбиения
+
+        	quick_sort(arr, low, pi - 1);  // Рекурсия для левой части
+        	quick_sort(arr, pi + 1, high); // Рекурсия для правой части
+    	}
+	}
+	fn rand_int(a int, seed int, k int) {
+		return (a * seed) % k;
+	}
+	seed int; 
+	seed = 1000001;
+	size_t int;
+	size_t = 1000000;
+	arr int[size_t];
+	t int;
+	a int;
+	a = 16807;
+	m int;
+	m = 2147483647;
+	for (t = 0; t < size_t; t = t+1) {
+		seed = (a * seed) % m;
+		arr[t] = seed;
+	}
+	//for (t = 0; t < size_t; t = t+1) {
+	//	print(arr[t]);
+	//}
+	quick_sort(arr, 0, size_t-1);
 	for (t = 0; t < size_t; t = t+1) {
 		print(arr[t]);
 	}
