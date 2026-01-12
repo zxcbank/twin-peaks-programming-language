@@ -39,17 +39,15 @@ func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
 
 	// 6. Возвращаемый тип (второй ребенок)
 	returnTypeNode := node.Children[1]
-	_ = returnTypeNode // Можем использовать для проверки типов
+	_ = returnTypeNode // TODO: Можем использовать для проверки типов
 
 	// 7. Тело функции (третий ребенок)
 	bodyNode := node.Children[2]
 
 	// 8. Генерируем пролог функции (сохранение параметров из стека в локальные)
 	// Когда функция вызывается, аргументы уже лежат на стеке
-	for i := paramCount - 1; i >= 0; i-- {
-		// LOAD_ARGS - специальная инструкция для загрузки i-го аргумента
-		// или можно использовать комбинацию других инструкций
-		c.emit(OP_LOAD_ARG, i)
+	for i := 0; i < paramCount; i++ {
+		c.emit(OP_STORE, i)
 	}
 
 	// 9. Сохраняем текущий контекст функции
@@ -63,6 +61,15 @@ func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
 	// 10. Сбрасываем метки для функции
 	c.labels = make(map[string]int)
 	c.labelCounter = 0
+
+	// Добавляем информацию о функции в таблицу
+	c.funcTable[funcName] = &FunctionInfo{
+		Name:       funcName,
+		Address:    funcStart,
+		ParamCount: paramCount,
+		LocalCount: len(c.currentScope.variables),
+		ReturnType: returnTypeNode.Value.(string),
+	}
 
 	// 11. Компилируем тело функции
 	if err := c.compileNode(bodyNode); err != nil {
@@ -81,16 +88,7 @@ func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
 		}
 	}
 
-	// 13. Добавляем информацию о функции в таблицу
-	c.funcTable[funcName] = &FunctionInfo{
-		Name:       funcName,
-		Address:    funcStart,
-		ParamCount: paramCount,
-		LocalCount: len(c.currentScope.variables),
-		ReturnType: returnTypeNode.Value.(string),
-	}
-
-	// 14. Восстанавливаем предыдущий контекст
+	// 13. Восстанавливаем предыдущий контекст
 	c.currentScope = prevScope
 	c.currentFunc = prevFunc
 	c.labels = prevLabels

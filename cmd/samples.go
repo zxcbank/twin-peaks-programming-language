@@ -26,8 +26,9 @@ print(f);`
 		result = number(20, 10);
 		print(result);`
 	for_example = `x int;
-	for (x = 0; x > 10; x=x+1) {
+	for (x = 0; x < 10; x=x+1) {
 	print(x);
+if (x == 4) { break;}
 	}`
 
 	math_expression_example = `x int;
@@ -49,9 +50,29 @@ print(f);`
 		print(y);
 		if (x > y) {
 print(2 * x);}
-	`
+	z bool;
+z = false;
+if (z == false) {
+print(100);
+}`
 	ex1 = `
 x int;
 x = 1 * 2 * 3 * 4 * 5 * 6 * 7 * 8 * 9 * 10 * 11 * 12 * 13 * 14 * 15 * 16 * 17 * 18 * 19 * 20;
 print(x);`
+	simple_function = `
+fn add(a int, b int) {
+	a / b;
+}
+result int;
+result = add(20, 10);
+print(result);`
+	array_example = `
+arr int[10];
+arr[0] = 10;
+arr[1] = 20;
+arr[2] = 30;
+print(arr[0]);
+print(arr[1]);
+print(arr[2]);
+`
 )

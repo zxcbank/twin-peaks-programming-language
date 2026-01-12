@@ -3,6 +3,7 @@ package bytecode
 import (
 	"fmt"
 	"strconv"
+	"twin-peaks-programming-language/internal/lexer"
 	"twin-peaks-programming-language/internal/parser"
 )
 
@@ -14,6 +15,7 @@ type Compiler struct {
 	funcTable    map[string]*FunctionInfo
 	labels       map[string]int
 	labelCounter int
+	unresolved   map[string][]int
 }
 
 // Область видимости
@@ -32,6 +34,7 @@ func NewCompiler() *Compiler {
 		currentScope: &Scope{variables: make(map[string]int)},
 		funcTable:    make(map[string]*FunctionInfo),
 		labels:       make(map[string]int),
+		unresolved:   make(map[string][]int),
 		labelCounter: 0,
 	}
 }
@@ -41,17 +44,17 @@ func (c *Compiler) Compile(ast *parser.ASTNode) (*Bytecode, error) {
 		return nil, fmt.Errorf("expected Program node")
 	}
 
-	// Первый проход: собираем информацию о функциях
-	for _, child := range ast.Children {
-		if child.Type == parser.NodeFuncDecl {
-			funcName := child.Value.(string)
-			c.bytecode.FuncTable[funcName] = &FunctionInfo{
-				Name:       funcName,
-				Address:    len(c.bytecode.Instructions),
-				ParamCount: len(child.Children[0].Children),
-			}
-		}
-	}
+	//// Первый проход: собираем информацию о функциях
+	//for _, child := range ast.Children {
+	//	if child.Type == parser.NodeFuncDecl {
+	//		funcName := child.Value.(string)
+	//		c.bytecode.FuncTable[funcName] = &FunctionInfo{
+	//			Name:       funcName,
+	//			Address:    len(c.bytecode.Instructions),
+	//			ParamCount: len(child.Children[0].Children),
+	//		}
+	//	}
+	//}
 
 	// Второй проход: компилируем код
 	for _, child := range ast.Children {
@@ -62,6 +65,11 @@ func (c *Compiler) Compile(ast *parser.ASTNode) (*Bytecode, error) {
 
 	// Добавляем HALT в конце программы
 	c.emit(OP_HALT)
+
+	// Попытка разрешить все отложенные переходы
+	if err := c.resolveUnresolvedLabels(); err != nil {
+		return nil, err
+	}
 
 	return c.bytecode, nil
 }
@@ -89,7 +97,7 @@ func (c *Compiler) compileNode(node *parser.ASTNode) error {
 	case parser.NodeBlock:
 		return c.compileBlock(node)
 	default:
-		return fmt.Errorf("unsupported node type: %v", node.Type)
+		return fmt.Errorf("unsupported node type: \n%s", node.String())
 	}
 }
 
@@ -206,26 +214,33 @@ func (c *Compiler) compileIdentifier(node *parser.ASTNode) error {
 func (c *Compiler) compileLiteral(node *parser.ASTNode) error {
 	value := node.Value.(string)
 
-	// Пробуем преобразовать в число
-	if intVal, err := strconv.ParseInt(value, 10, 64); err == nil {
-		constIndex := c.addConstant(int(intVal))
-		c.emit(OP_CONST, constIndex)
-	} else if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
-		constIndex := c.addConstant(floatVal)
-		c.emit(OP_CONST, constIndex)
-	} else if value == "true" {
-		constIndex := c.addConstant(true)
-		c.emit(OP_CONST, constIndex)
-	} else if value == "false" {
-		constIndex := c.addConstant(false)
-		c.emit(OP_CONST, constIndex)
-	} else {
-		// Строковый литерал
+	switch node.Token.Type {
+	case lexer.ConstNum:
+		if intVal, err := strconv.ParseInt(value, 10, 64); err == nil {
+			constIndex := c.addConstant(int(intVal))
+			c.emit(OP_CONST, constIndex)
+			return nil
+		} else if floatVal, err := strconv.ParseFloat(value, 64); err == nil {
+			constIndex := c.addConstant(floatVal)
+			c.emit(OP_CONST, constIndex)
+			return nil
+		}
+		return fmt.Errorf("invalid number literal: %s", value)
+	case lexer.ConstText:
 		constIndex := c.addConstant(value)
 		c.emit(OP_CONST, constIndex)
+		return nil
+	case lexer.True:
+		constIndex := c.addConstant(true)
+		c.emit(OP_CONST, constIndex)
+		return nil
+	case lexer.False:
+		constIndex := c.addConstant(false)
+		c.emit(OP_CONST, constIndex)
+		return nil
+	default:
+		return fmt.Errorf("unsupported literal token type: %v", node.Token.Type)
 	}
-
-	return nil
 }
 
 //func (c *Compiler) compileCall(node *parser.ASTNode) error {
@@ -269,7 +284,7 @@ func (c *Compiler) compileIf(node *parser.ASTNode) error {
 	endLabel := c.newLabel("endif")
 
 	// Переход если false
-	c.emit(OP_JMP_IF_FALSE, elseLabel)
+	c.emitJump(OP_JMP_IF_FALSE, elseLabel)
 
 	// Компилируем then-блок
 	if err := c.compileNode(node.Children[1]); err != nil {
@@ -277,7 +292,7 @@ func (c *Compiler) compileIf(node *parser.ASTNode) error {
 	}
 
 	// Переход к концу
-	c.emit(OP_JMP, endLabel)
+	c.emitJump(OP_JMP, endLabel)
 
 	// Метка else
 	c.placeLabel(elseLabel)
@@ -320,7 +335,7 @@ func (c *Compiler) compileFor(node *parser.ASTNode) error {
 		if err := c.compileNode(node.Children[1]); err != nil {
 			return err
 		}
-		c.emit(OP_JMP_IF_FALSE, loopEnd)
+		c.emitJump(OP_JMP_IF_FALSE, loopEnd)
 	}
 
 	// Тело цикла
@@ -339,7 +354,7 @@ func (c *Compiler) compileFor(node *parser.ASTNode) error {
 	}
 
 	// Переход к началу
-	c.emit(OP_JMP, loopStart)
+	c.emitJump(OP_JMP, loopStart)
 
 	// Метка конца цикла
 	c.placeLabel(loopEnd)
@@ -382,6 +397,20 @@ func (c *Compiler) emit(opcode byte, operands ...int) {
 	})
 }
 
+func (c *Compiler) emitJump(opcode byte, label string) {
+	instr := Instruction{Opcode: opcode, Operands: []int{0}}
+	c.bytecode.Instructions = append(c.bytecode.Instructions, instr)
+	idx := len(c.bytecode.Instructions) - 1
+
+	addr, ok := c.labels[label]
+	if !ok || addr == -1 {
+		// label not yet placed - remember to patch later
+		c.unresolved[label] = append(c.unresolved[label], idx)
+	} else {
+		c.bytecode.Instructions[idx].Operands[0] = addr
+	}
+}
+
 func (c *Compiler) addConstant(value interface{}) int {
 	for i, v := range c.bytecode.Constants {
 		if v == value {
@@ -398,23 +427,50 @@ func (c *Compiler) allocateLocal(name string) int {
 	return index
 }
 
-func (c *Compiler) newLabel(prefix string) int {
-	label := c.labelCounter
+func (c *Compiler) newLabel(prefix string) string {
+	labelName := fmt.Sprintf("%s_%d", prefix, c.labelCounter)
 	c.labelCounter++
-	c.labels[fmt.Sprintf("%s_%d", prefix, label)] = -1 // -1 означает "еще не размещено"
-	return label
+	c.labels[labelName] = -1 // -1 означает "еще не размещено"
+	return labelName
 }
 
-func (c *Compiler) placeLabel(label int) {
-	// Метки размещаются как инструкции с адресом текущей позиции
-	// В реальности метки - это не инструкции, а просто отметки в коде
-	// Для простоты храним их в отдельной таблице
-	for name, addr := range c.labels {
-		if addr == -1 {
-			c.labels[name] = len(c.bytecode.Instructions)
-			break
+func (c *Compiler) placeLabel(label string) {
+	// Устанавливаем адрес метки на текущую позицию инструкций
+	addr := len(c.bytecode.Instructions)
+	c.labels[label] = addr
+
+	// Патчим все отложенные переходы, ссылающиеся на эту метку
+	if list, ok := c.unresolved[label]; ok {
+		for _, idx := range list {
+			// Защитимся на случай некорректного индекса
+			if idx >= 0 && idx < len(c.bytecode.Instructions) {
+				c.bytecode.Instructions[idx].Operands[0] = addr
+			}
 		}
+		// Очищаем список
+		delete(c.unresolved, label)
 	}
+}
+
+// resolveUnresolvedLabels проверяет, что все метки были размещены и патчит все отложенные переходы.
+func (c *Compiler) resolveUnresolvedLabels() error {
+	if len(c.unresolved) == 0 {
+		return nil
+	}
+	for label, idxs := range c.unresolved {
+		addr, ok := c.labels[label]
+		if !ok || addr == -1 {
+			return fmt.Errorf("unresolved label: %s", label)
+		}
+		for _, idx := range idxs {
+			if idx >= 0 && idx < len(c.bytecode.Instructions) {
+				c.bytecode.Instructions[idx].Operands[0] = addr
+			}
+		}
+		// optional: clear map entry
+		delete(c.unresolved, label)
+	}
+	return nil
 }
 
 func (c *Compiler) compileCall(node *parser.ASTNode) error {

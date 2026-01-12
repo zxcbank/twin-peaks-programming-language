@@ -27,9 +27,9 @@ const (
 	OP_HALT                     // Остановка
 
 	OP_RETURN_VOID
-	OP_LOAD_ARG
-	OP_ENTER
-	OP_LEAVE
+	OP_LOAD_ARG // TODO: Подумать, нужно ли это
+	OP_ENTER    // TODO: Подумать, нужно ли это
+	OP_LEAVE    // TODO: Подумать, нужно ли это
 )
 
 // Типы значений в байт-коде

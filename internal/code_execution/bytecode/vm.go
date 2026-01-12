@@ -7,8 +7,18 @@ import (
 type Frame struct {
 	locals   []Value
 	returnIP int
-	basePtr  int
+	basePtr  int // index of previous frame in frames slice
 	funcInfo *FunctionInfo
+}
+
+// ensureLocalsSize ensures the frame has at least `required` slots in locals.
+// It grows the slice using append to avoid unnecessary copying.
+func (f *Frame) ensureLocalsSize(required int) {
+	if required <= len(f.locals) {
+		return
+	}
+	needed := required - len(f.locals)
+	f.locals = append(f.locals, make([]Value, needed)...)
 }
 
 // Виртуальная машина
@@ -18,17 +28,23 @@ type VM struct {
 	frames   []Frame
 	ip       int // Instruction Pointer
 	sp       int // Stack Pointer
-	fp       int // Frame Pointer
+	fp       int // Frame Pointer (index into frames slice)
 }
 
 func NewVM(bytecode *Bytecode) *VM {
+	// Create frames slice with a single base frame
+	frames := make([]Frame, 1)
+	//frames = append(frames, Frame{
+	//	locals: make([]Value, 128), // base frame locals
+	//	// returnIP/basePtr/funcInfo are zero values
+	//})
 	return &VM{
 		bytecode: bytecode,
 		stack:    make([]Value, 1024*1024),
-		frames:   make([]Frame, 256*256),
+		frames:   frames,
 		ip:       bytecode.programStart,
 		sp:       -1,
-		fp:       0,
+		fp:       0, // index of current frame
 	}
 }
 
@@ -36,7 +52,7 @@ func (vm *VM) Run() error {
 	for vm.ip < len(vm.bytecode.Instructions) {
 		instr := vm.bytecode.Instructions[vm.ip]
 		vm.ip++
-
+		//fmt.Printf("Executing instruction %s\n", instr.String())
 		switch instr.Opcode {
 		case OP_CONST:
 			// Загружаем константу на стек
@@ -50,10 +66,13 @@ func (vm *VM) Run() error {
 		case OP_LOAD:
 			// Загружаем локальную переменную
 			localIndex := instr.Operands[0]
-			if localIndex >= len(vm.frames[vm.fp].locals) {
-				return fmt.Errorf("local variable index out of bounds: %d", localIndex)
+			if vm.fp < 0 || vm.fp >= len(vm.frames) {
+				return fmt.Errorf("invalid frame pointer: %d", vm.fp)
 			}
-			vm.push(vm.frames[vm.fp].locals[localIndex])
+			// ensure locals capacity
+			currentFrame := &vm.frames[vm.fp]
+			currentFrame.ensureLocalsSize(localIndex + 1)
+			vm.push(currentFrame.locals[localIndex])
 
 		case OP_STORE:
 			// Сохраняем значение в локальную переменную
@@ -62,7 +81,12 @@ func (vm *VM) Run() error {
 				return fmt.Errorf("stack underflow")
 			}
 			value := vm.pop()
-			vm.frames[vm.fp].locals[localIndex] = value
+			if vm.fp < 0 || vm.fp >= len(vm.frames) {
+				return fmt.Errorf("invalid frame pointer: %d", vm.fp)
+			}
+			currentFrame := &vm.frames[vm.fp]
+			currentFrame.ensureLocalsSize(localIndex + 1)
+			currentFrame.locals[localIndex] = value
 
 		case OP_ADD:
 			if err := vm.binaryOp(func(a, b Value) Value {
@@ -126,11 +150,71 @@ func (vm *VM) Run() error {
 					}
 					return Value{Data: a.Data.(float64) / bFloat}
 				default:
-					return Value{Data: 0}
+					return Value{Data: 0} // TODO: think about error reporting
 				}
 			}); err != nil {
 				return err
 			}
+		case OP_MOD:
+			if err := vm.binaryOp(func(a, b Value) Value {
+				switch a.Data.(type) {
+				case int:
+					bInt := b.Data.(int)
+					if bInt == 0 {
+						return Value{Data: 0}
+					}
+					return Value{Data: a.Data.(int) % bInt}
+				default:
+					return Value{Data: 0} // TODO: think about error reporting
+				}
+			}); err != nil {
+				return err
+			}
+		case OP_LT:
+			if err := vm.binaryOp(func(a, b Value) Value { return valueLT(a, b) }); err != nil {
+				return err
+			}
+		case OP_LE:
+			if err := vm.binaryOp(func(a, b Value) Value { return valueLE(a, b) }); err != nil {
+				return err
+			}
+		case OP_EQ:
+			if err := vm.binaryOp(func(a, b Value) Value { return valueEQ(a, b) }); err != nil {
+				return err
+			}
+		case OP_NEQ:
+			if err := vm.binaryOp(func(a, b Value) Value { return valueNEQ(a, b) }); err != nil {
+				return err
+			}
+		case OP_GT:
+			if err := vm.binaryOp(func(a, b Value) Value { return valueGT(a, b) }); err != nil {
+				return err
+			}
+		case OP_GE:
+			if err := vm.binaryOp(func(a, b Value) Value { return valueGE(a, b) }); err != nil {
+				return err
+			}
+		case OP_AND:
+			err := vm.binaryOp(func(a, b Value) Value {
+				return Value{Data: isTruthy(a) && isTruthy(b)}
+			})
+			if err != nil {
+				return err
+			}
+		case OP_OR:
+			err := vm.binaryOp(func(a, b Value) Value {
+				return Value{Data: isTruthy(a) || isTruthy(b)}
+			})
+			if err != nil {
+				return err
+			}
+		case OP_NOT:
+			// Logical NOT: pop one value and push its negation
+			if vm.sp < 0 {
+				return fmt.Errorf("stack underflow")
+			}
+			val := vm.pop()
+			vm.push(Value{Data: !isTruthy(val)})
 
 		case OP_PRINT:
 			// Вывод значения
@@ -165,10 +249,11 @@ func (vm *VM) Run() error {
 			frame := Frame{
 				returnIP: vm.ip,
 				basePtr:  vm.fp,
-				locals:   make([]Value, 256),
+				locals:   make([]Value, 0),
 			}
 			vm.frames = append(vm.frames, frame)
-			vm.fp = vm.sp
+			// FP is index of current frame (last one)
+			vm.fp = len(vm.frames) - 1
 
 			// Переходим к функции
 			vm.ip = funcAddr
@@ -188,7 +273,7 @@ func (vm *VM) Run() error {
 			// Восстанавливаем состояние
 			vm.ip = frame.returnIP
 			vm.fp = frame.basePtr
-			vm.sp = vm.fp
+			// DO NOT modify sp here; stack should remain intact
 
 			// Кладем возвращаемое значение на стек
 			vm.push(returnValue)
@@ -204,30 +289,36 @@ func (vm *VM) Run() error {
 
 			vm.ip = frame.returnIP
 			vm.fp = frame.basePtr
-			vm.sp = vm.fp
-
 			// Пушим nil для void функций
 			vm.push(Value{Type: ValNil})
 
 		case OP_LOAD_ARG:
 			// Загрузка аргумента из текущего фрейма
 			argIndex := instr.Operands[0]
-			if len(vm.frames) == 0 {
+			if vm.fp < 0 || vm.fp >= len(vm.frames) {
 				return fmt.Errorf("no active frame")
 			}
 
-			currentFrame := &vm.frames[len(vm.frames)-1]
-			if argIndex >= len(currentFrame.locals) {
-				return fmt.Errorf("argument index out of bounds: %d", argIndex)
-			}
+			currentFrame := &vm.frames[vm.fp]
+			// grow locals if needed so caller can access args even if OP_ENTER wasn't emitted
+			currentFrame.ensureLocalsSize(argIndex + 1)
 
 			vm.push(currentFrame.locals[argIndex])
 
 		case OP_ENTER:
 			// Инициализация фрейма (может использоваться для выделения локальных)
 			localCount := instr.Operands[0]
-			if len(vm.frames) > 0 {
-				currentFrame := &vm.frames[len(vm.frames)-1]
+			if vm.fp < 0 || vm.fp >= len(vm.frames) {
+				return fmt.Errorf("no active frame for enter: %d", vm.fp)
+			}
+			currentFrame := &vm.frames[vm.fp]
+			// Ensure at least localCount slots
+			if localCount <= 0 {
+				// keep current locals as-is (but ensure non-nil)
+				if len(currentFrame.locals) == 0 {
+					currentFrame.locals = make([]Value, 0)
+				}
+			} else {
 				currentFrame.locals = make([]Value, localCount)
 			}
 
@@ -235,10 +326,18 @@ func (vm *VM) Run() error {
 			// Очистка фрейма
 			if len(vm.frames) > 0 {
 				vm.frames = vm.frames[:len(vm.frames)-1]
+				// adjust fp
+				if len(vm.frames) == 0 {
+					// restore base frame
+					vm.frames = append(vm.frames, Frame{locals: make([]Value, 128)})
+					vm.fp = 0
+				} else {
+					vm.fp = len(vm.frames) - 1
+				}
 			}
 
 		default:
-			return fmt.Errorf("unknown opcode: %d", instr.Opcode)
+			return fmt.Errorf("unknown opcode in instruction: %s", instr.String())
 		}
 	}
 
@@ -284,6 +383,114 @@ func (vm *VM) binaryOp(op func(Value, Value) Value) error {
 	result := op(a, b)
 	vm.push(result)
 	return nil
+}
+
+// Comparison helper functions. Each returns a Value containing a bool result.
+func valueLT(a, b Value) Value {
+	switch aVal := a.Data.(type) {
+	case int:
+		if bVal, ok := b.Data.(int); ok {
+			return Value{Data: aVal < bVal}
+		}
+	case float64:
+		if bVal, ok := b.Data.(float64); ok {
+			return Value{Data: aVal < bVal}
+		}
+	case bool:
+		if bVal, ok := b.Data.(bool); ok {
+			// false < true
+			return Value{Data: !aVal && bVal}
+		}
+	}
+	return Value{Data: false}
+}
+
+func valueLE(a, b Value) Value {
+	switch aVal := a.Data.(type) {
+	case int:
+		if bVal, ok := b.Data.(int); ok {
+			return Value{Data: aVal <= bVal}
+		}
+	case float64:
+		if bVal, ok := b.Data.(float64); ok {
+			return Value{Data: aVal <= bVal}
+		}
+	case bool:
+		if bVal, ok := b.Data.(bool); ok {
+			// a <= b  is true when !a || b
+			return Value{Data: !aVal || bVal}
+		}
+	}
+	return Value{Data: false}
+}
+
+func valueGT(a, b Value) Value {
+	switch aVal := a.Data.(type) {
+	case int:
+		if bVal, ok := b.Data.(int); ok {
+			return Value{Data: aVal > bVal}
+		}
+	case float64:
+		if bVal, ok := b.Data.(float64); ok {
+			return Value{Data: aVal > bVal}
+		}
+	case bool:
+		if bVal, ok := b.Data.(bool); ok {
+			// true > false
+			return Value{Data: (aVal && !bVal)}
+		}
+	}
+	return Value{Data: false}
+}
+
+func valueGE(a, b Value) Value {
+	switch aVal := a.Data.(type) {
+	case int:
+		if bVal, ok := b.Data.(int); ok {
+			return Value{Data: aVal >= bVal}
+		}
+	case float64:
+		if bVal, ok := b.Data.(float64); ok {
+			return Value{Data: aVal >= bVal}
+		}
+	case bool:
+		if bVal, ok := b.Data.(bool); ok {
+			// a >= b is true when a || !b
+			return Value{Data: aVal || !bVal}
+		}
+	}
+	return Value{Data: false}
+}
+
+func valueEQ(a, b Value) Value {
+	switch aVal := a.Data.(type) {
+	case int:
+		if bVal, ok := b.Data.(int); ok {
+			return Value{Data: aVal == bVal}
+		}
+	case float64:
+		if bVal, ok := b.Data.(float64); ok {
+			return Value{Data: aVal == bVal}
+		}
+	case string:
+		if bVal, ok := b.Data.(string); ok {
+			return Value{Data: aVal == bVal}
+		}
+	case bool:
+		if bVal, ok := b.Data.(bool); ok {
+			return Value{Data: aVal == bVal}
+		}
+	}
+	return Value{Data: false}
+}
+
+func valueNEQ(a, b Value) Value {
+	// Just invert EQ
+	eq := valueEQ(a, b)
+	if bBool, ok := eq.Data.(bool); ok {
+		return Value{Data: !bBool}
+	}
+	return Value{Data: true}
 }
 
 func isTruthy(value Value) bool {
