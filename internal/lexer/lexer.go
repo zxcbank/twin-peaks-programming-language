@@ -73,8 +73,18 @@ func (l *Lexer) readNumber() string {
 	for isDigit(l.ch) {
 		l.readChar()
 	}
-	if l.ch == '.' && isDigit(l.peekChar()) {
+	if l.ch != '.' || !isDigit(l.peekChar()) {
+		return l.input[start:l.position]
+	}
+	l.readChar()
+	for isDigit(l.ch) {
 		l.readChar()
+	}
+	if l.ch == 'e' || l.ch == 'E' {
+		l.readChar()
+		if l.ch == '+' || l.ch == '-' {
+			l.readChar()
+		}
 		for isDigit(l.ch) {
 			l.readChar()
 		}
@@ -87,13 +97,14 @@ func (l *Lexer) readString() string {
 	for {
 		l.readChar()
 		if l.ch == '"' || l.ch == 0 {
+			l.readChar()
 			break
 		}
 		if l.ch == '\\' && l.peekChar() == '"' {
 			l.readChar()
 		}
 	}
-	return l.input[start:l.position]
+	return l.input[start : l.position-1]
 }
 
 func (l *Lexer) NextToken() (Token, error) {

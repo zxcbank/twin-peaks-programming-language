@@ -2,6 +2,7 @@ package bytecode
 
 import (
 	"fmt"
+	"math"
 )
 
 type Frame struct {
@@ -78,7 +79,7 @@ func (vm *VM) Run() error {
 			}
 			// ensure locals capacity
 			currentFrame := &vm.frames[vm.fp]
-			currentFrame.ensureLocalsSize(localIndex + 1)
+			//currentFrame.ensureLocalsSize(localIndex + 1)
 			vm.push(currentFrame.locals[localIndex])
 
 		case OP_STORE:
@@ -177,6 +178,21 @@ func (vm *VM) Run() error {
 			}); err != nil {
 				return err
 			}
+		case OP_NEG:
+			if vm.sp < 0 {
+				return fmt.Errorf("stack underflow")
+			}
+			val := vm.pop()
+			var negated Value
+			switch val.Data.(type) {
+			case int:
+				negated = Value{Data: -val.Data.(int)}
+			case float64:
+				negated = Value{Data: -val.Data.(float64)}
+			default:
+				negated = val
+			}
+			vm.push(negated)
 		case OP_LT:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueLT(a, b) }); err != nil {
 				return err
@@ -230,6 +246,24 @@ func (vm *VM) Run() error {
 			}
 			value := vm.pop()
 			fmt.Println(value.Data)
+
+		case OP_SQRT:
+			// Вычисление квадратного корня
+			if vm.sp < 0 {
+				return fmt.Errorf("stack underflow")
+			}
+			value := vm.pop()
+			switch v := value.Data.(type) {
+			case int:
+				// Преобразуем к float64 для вычисления корня
+				result := math.Sqrt(float64(v))
+				vm.push(Value{Data: result})
+			case float64:
+				result := math.Sqrt(v)
+				vm.push(Value{Data: result})
+			default:
+				return fmt.Errorf("SQRT operation requires int or float64")
+			}
 
 		case OP_HALT:
 			// Остановка

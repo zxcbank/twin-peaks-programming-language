@@ -10,6 +10,7 @@ const (
 	OP_MUL                      // Умножение
 	OP_DIV                      // Деление
 	OP_MOD                      // Остаток от деления
+	OP_NEG                      // Унарный минус
 	OP_EQ                       // Равенство
 	OP_NEQ                      // Неравенство
 	OP_LT                       // Меньше
@@ -24,7 +25,8 @@ const (
 	OP_CALL                     // Вызов функции
 	OP_RETURN                   // Возврат из функции
 	OP_PRINT                    // Вывод
-	OP_HALT                     // Остановка
+	OP_SQRT
+	OP_HALT // Остановка
 
 	OP_RETURN_VOID
 	OP_LOAD_ARG // TODO: Подумать, нужно ли это

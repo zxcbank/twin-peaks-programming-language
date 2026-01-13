@@ -84,6 +84,8 @@ func (c *Compiler) compileNode(node *parser.ASTNode) error {
 		return c.compileArrayLoad(node)
 	case parser.NodeBinaryOp:
 		return c.compileBinaryOp(node)
+	case parser.NodeUnaryOp:
+		return c.compileUnaryOp(node)
 	case parser.NodeIdentifier:
 		return c.compileIdentifier(node)
 	case parser.NodeLiteral:
@@ -254,6 +256,28 @@ func (c *Compiler) compileBinaryOp(node *parser.ASTNode) error {
 	}
 
 	return nil
+}
+
+func (c *Compiler) compileUnaryOp(node *parser.ASTNode) error {
+	if len(node.Children) < 1 {
+		return fmt.Errorf("invalid UnaryOp node")
+	}
+
+	op := node.Value.(string)
+
+	if err := c.compileNode(node.Children[0]); err != nil {
+		return err
+	}
+	switch op {
+	case "!":
+		c.emit(OP_NOT)
+		return nil
+	case "-":
+		c.emit(OP_NEG)
+		return nil
+	default:
+		return fmt.Errorf("unknown unary operator: %s", op)
+	}
 }
 
 func (c *Compiler) compileIdentifier(node *parser.ASTNode) error {
@@ -534,13 +558,21 @@ func (c *Compiler) compileCall(node *parser.ASTNode) error {
 	// Проверяем, встроенная ли это функция
 	switch funcName {
 	case "print":
-		// Компилируем аргументы
 		for _, arg := range node.Children {
 			if err := c.compileNode(arg); err != nil {
 				return err
 			}
 		}
 		c.emit(OP_PRINT)
+		return nil
+	case "sqrt":
+		if len(node.Children) != 1 {
+			return fmt.Errorf("function sqrt expects 1 argument, got %d", len(node.Children))
+		}
+		if err := c.compileNode(node.Children[0]); err != nil {
+			return err
+		}
+		c.emit(OP_SQRT)
 		return nil
 	}
 
