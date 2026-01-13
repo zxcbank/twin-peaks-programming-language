@@ -221,10 +221,6 @@ print(arr[0]);
 	print(-pi);
 `
 	nbody = `
-	PI float;
-	SOLAR_MASS float;
-	DAYS_PER_YEAR float;
-
 fn setBody(bodies float, idx int, x float, y float, z float, vx float, vy float, vz float, mass float) {
     
 	base int;
@@ -272,7 +268,6 @@ fn energy(bodies float, size int) float {
             e = e - (mass_i * bodies[base_j+6]) / distance;
         }
     }
-	print(e);
     return e;
 }
 
@@ -310,19 +305,17 @@ fn advance(bodies float, size int, dt float) {
     }
 }
 
-PI = 3.141592653589793;
-SOLAR_MASS = 4.0 * PI * PI;
-DAYS_PER_YEAR = 365.24;
+
 
 fn setJupiter(bodies float, DAYS_PER_YEAR float, SOLAR_MASS float) {
     setBody(bodies, 1,
-        4.84143144246472090e+00,
-        -1.16032004402742839e+00,
-        -1.03622044471123109e-01,
-        1.66007664274403694e-03 * DAYS_PER_YEAR,
-        7.69901118419740425e-03 * DAYS_PER_YEAR,
-        -6.90460016972063023e-05 * DAYS_PER_YEAR,
-        9.54791938424326609e-04 * SOLAR_MASS
+     4.84143144246472090e+00,
+     -1.16032004402742839e+00,
+     -1.03622044471123109e-01,
+     1.66007664274403694e-03 * DAYS_PER_YEAR,
+     7.69901118419740425e-03 * DAYS_PER_YEAR,
+     -6.90460016972063023e-05 * DAYS_PER_YEAR,
+     9.54791938424326609e-04 * SOLAR_MASS
     );
 }
 
@@ -363,61 +356,62 @@ fn setNeptune(bodies float, DAYS_PER_YEAR float, SOLAR_MASS float) {
 }
 
 fn setSun(bodies float, SOLAR_MASS float) {
-print("setsun start");
     setBody(bodies, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, SOLAR_MASS);
 i int;
-	for (i = 0; i < 7; i = i + 1) {
-		print(bodies[i]);
-	}
-print("setsun return");
 }
-
+PI float;
+SOLAR_MASS float;
+DAYS_PER_YEAR float;
+PI = 3.141592653589793;
+SOLAR_MASS = 4.0 * PI * PI;
+DAYS_PER_YEAR = 365.24;
 ret float;
 ret = 0.0;
 n int;
-for (n = 3; n <= 4; n = n * 2) { // TODO: change limit back to 24
+for (n = 3; n <= 24; n = n * 2) { // TODO: change limit back to 24
     bodies float[35];
-	print("setstart");
+	p int;
+	for (p = 0; p < 35; p=p+1) {
+		bodies[p] = 0.00;
+	}
     setSun(bodies, SOLAR_MASS);
-	print("setdone");
-    //setJupiter(bodies, DAYS_PER_YEAR, SOLAR_MASS);
-    //setSaturn(bodies, DAYS_PER_YEAR, SOLAR_MASS);
-    //setUranus(bodies, DAYS_PER_YEAR, SOLAR_MASS);
-    //setNeptune(bodies, DAYS_PER_YEAR, SOLAR_MASS);
-//
-//
-    //px float; py float; pz float;
-    //px = 0.0; py = 0.0; pz = 0.0;
-    //size int;
-    //size = 5;
-    //i int;
-    //for (i = 0; i < size; i = i + 1) {
-    //    base int;
-    //    base = i * 7;
-    //    px = px + bodies[base+3] * bodies[base+6];
-    //    py = py + bodies[base+4] * bodies[base+6];
-    //    pz = pz + bodies[base+5] * bodies[base+6];
-    //}
-    //offsetMomentum(bodies, 0, px, py, pz, SOLAR_MASS);
+    setJupiter(bodies, DAYS_PER_YEAR, SOLAR_MASS);
+    setSaturn(bodies, DAYS_PER_YEAR, SOLAR_MASS);
+    setUranus(bodies, DAYS_PER_YEAR, SOLAR_MASS);
+    setNeptune(bodies, DAYS_PER_YEAR, SOLAR_MASS);
 
-    //ret = ret + energy(bodies, size);
-    //max int;
-    //max = n * 100;
-    //for (i = 0; i < max; i = i + 1) {
-    //    advance(bodies, size, 0.01);
-    //}
-    //ret = ret + energy(bodies, size);
+   px float; py float; pz float;
+   px = 0.0; py = 0.0; pz = 0.0;
+   size int;
+   size = 5;
+    i int;
+    for (i = 0; i < size; i = i + 1) {
+      base int;
+      base = i * 7;
+      px = px + bodies[base+3] * bodies[base+6];
+      py = py + bodies[base+4] * bodies[base+6];
+      pz = pz + bodies[base+5] * bodies[base+6];
+    }
+    offsetMomentum(bodies, 0, px, py, pz, SOLAR_MASS);
+
+    ret = ret + energy(bodies, size);
+    max int;
+    max = n * 100;
+    for (i = 0; i < max; i = i + 1) {
+      advance(bodies, size, 0.01);
+    }
+    ret = ret + energy(bodies, size);
 }
-
-//for (n = 0; n < 7; n = n + 1) {
-//	print(bodies[n]);
-//}
 expected float;
 expected = -1.3524862408537381;
-if (ret != expected) {
-    print("ERROR (expected, got):");
-	print(expected);
-	print(ret);
-}
+print("EXPECTED:");
+print(expected);
+print("RETURN:");
+print(ret);
 `
+
+	simple_float = `
+	arr float[1];
+	arr[0] = 2;
+	print(arr[0]);`
 )

@@ -31,6 +31,7 @@ type VM struct {
 	ip       int // Instruction Pointer
 	sp       int // Stack Pointer
 	fp       int // Frame Pointer (index into frames slice)
+	gc       GarbageCollector
 }
 
 type Array struct {
@@ -39,20 +40,36 @@ type Array struct {
 	referenceCount int //  ?? we had them heappas in twin-peaks-pr0gramming-lаn9ua9e
 }
 
+func (a *Array) incrementReference() {
+	a.referenceCount++
+}
+
+func (a *Array) decrementReference() {
+	a.referenceCount--
+}
+
+func (a *Array) getReferenceCount() int {
+	return a.referenceCount
+}
+
 func NewVM(bytecode *Bytecode) *VM {
 	// Create frames slice with a single base frame
 	frames := make([]Frame, 1)
+	heap := make([]Array, 0)
 	//frames = append(frames, Frame{
 	//	locals: make([]Value, 128), // base frame locals
 	//	// returnIP/basePtr/funcInfo are zero values
 	//})
+	gc := GarbageCollector{&heap}
 	return &VM{
 		bytecode: bytecode,
 		stack:    make([]Value, 1024*1024*1024),
+		heap:     heap,
 		frames:   frames,
 		ip:       bytecode.programStart,
 		sp:       -1,
 		fp:       0, // index of current frame
+		gc:       gc,
 	}
 }
 
@@ -127,12 +144,14 @@ func (vm *VM) Run() error {
 			}
 
 		case OP_MUL:
+
 			if err := vm.binaryOp(func(a, b Value) Value {
 				// Умножение
 				switch a.Data.(type) {
 				case int:
 					return Value{Data: a.Data.(int) * b.Data.(int)}
 				case float64:
+					//fmt.Print(a.Data, b.Data)
 					return Value{Data: a.Data.(float64) * b.Data.(float64)}
 				default:
 					return Value{Data: 0}
@@ -298,6 +317,7 @@ func (vm *VM) Run() error {
 
 			// Переходим к функции
 			vm.ip = funcAddr
+			vm.gc.OnCallReferenceIncrement()
 
 		case OP_RETURN:
 			// Возвращаемое значение на вершине стека
@@ -318,6 +338,8 @@ func (vm *VM) Run() error {
 
 			// Кладем возвращаемое значение на стек
 			vm.push(returnValue)
+			vm.gc.OnReturnReferenceDecrement()
+			vm.gc.Clear()
 
 		case OP_RETURN_VOID:
 			// Аналогично RETURN, но без значения
@@ -332,6 +354,8 @@ func (vm *VM) Run() error {
 			vm.fp = frame.basePtr
 			// Пушим nil для void функций
 			vm.push(Value{Type: ValNil})
+			vm.gc.OnReturnReferenceDecrement()
+			vm.gc.Clear()
 
 		case OP_LOAD_ARG:
 			// Загрузка аргумента из текущего фрейма
@@ -446,9 +470,9 @@ func (vm *VM) Run() error {
 func (vm *VM) push(value Value) {
 	vm.sp++
 	vm.stack[vm.sp] = value
-	if value.Data == nil {
-		fmt.Printf("Pushed: nil, instr [%d]: %s\n", vm.ip-1, vm.bytecode.Instructions[vm.ip-1].String())
-	}
+	//if value.Data == nil {
+	//	//fmt.Printf("Pushed: nil, instr [%d]: %s\n", vm.ip-1, vm.bytecode.Instructions[vm.ip-1].String())
+	//}
 }
 
 func (vm *VM) pop() Value {
@@ -480,6 +504,7 @@ func (vm *VM) binaryOp(op func(Value, Value) Value) error {
 	}
 	b := vm.pop()
 	a := vm.pop()
+	//fmt.Print("+++", a, b)
 	result := op(a, b)
 	vm.push(result)
 	return nil
