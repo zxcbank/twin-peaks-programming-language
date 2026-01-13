@@ -8,7 +8,7 @@ import (
 type Frame struct {
 	locals   []Value
 	returnIP int
-	basePtr  int // index of previous frame in frames slice
+	basePtr  int // index of previous frame in framesPtr slice
 	funcInfo *FunctionInfo
 }
 
@@ -34,6 +34,13 @@ type VM struct {
 	gc       GarbageCollector
 }
 
+func (v *VM) PrintHeapSize() {
+	fmt.Println("Heap size:", len(v.heap))
+	for _, array := range v.heap {
+		fmt.Println(array.referenceCount)
+	}
+}
+
 type Array struct {
 	size           int
 	Array          []Value
@@ -53,14 +60,14 @@ func (a *Array) getReferenceCount() int {
 }
 
 func NewVM(bytecode *Bytecode) *VM {
-	// Create frames slice with a single base frame
+	// Create framesPtr slice with a single base frame
 	frames := make([]Frame, 1)
 	heap := make([]Array, 0)
-	//frames = append(frames, Frame{
+	//framesPtr = append(framesPtr, Frame{
 	//	locals: make([]Value, 128), // base frame locals
 	//	// returnIP/basePtr/funcInfo are zero values
 	//})
-	gc := GarbageCollector{&heap}
+	gc := GarbageCollector{}
 	return &VM{
 		bytecode: bytecode,
 		stack:    make([]Value, 1024*1024*1024),
@@ -317,7 +324,6 @@ func (vm *VM) Run() error {
 
 			// Переходим к функции
 			vm.ip = funcAddr
-			vm.gc.OnCallReferenceIncrement()
 
 		case OP_RETURN:
 			// Возвращаемое значение на вершине стека
@@ -327,7 +333,9 @@ func (vm *VM) Run() error {
 			if len(vm.frames) == 0 {
 				return fmt.Errorf("no frame to return to")
 			}
-
+			frameIndex := len(vm.frames) - 1
+			vm.push(returnValue)
+			vm.gc.Collect(&vm.heap, vm.frames, frameIndex)
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
@@ -337,9 +345,6 @@ func (vm *VM) Run() error {
 			// DO NOT modify sp here; stack should remain intact
 
 			// Кладем возвращаемое значение на стек
-			vm.push(returnValue)
-			vm.gc.OnReturnReferenceDecrement()
-			vm.gc.Clear()
 
 		case OP_RETURN_VOID:
 			// Аналогично RETURN, но без значения
@@ -347,6 +352,8 @@ func (vm *VM) Run() error {
 				return fmt.Errorf("no frame to return to")
 			}
 
+			frameIndex := len(vm.frames) - 1
+			vm.gc.Collect(&vm.heap, vm.frames, frameIndex)
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
@@ -354,8 +361,6 @@ func (vm *VM) Run() error {
 			vm.fp = frame.basePtr
 			// Пушим nil для void функций
 			vm.push(Value{Type: ValNil})
-			vm.gc.OnReturnReferenceDecrement()
-			vm.gc.Clear()
 
 		case OP_LOAD_ARG:
 			// Загрузка аргумента из текущего фрейма
@@ -415,7 +420,7 @@ func (vm *VM) Run() error {
 			// ensure locals capacity
 			currentFrame := &vm.frames[vm.fp]
 			currentFrame.ensureLocalsSize(localIndex + 1)
-			currentFrame.locals[localIndex] = Value{Data: neccessaryIndex}
+			currentFrame.locals[localIndex] = Value{Type: ValHeapPtr, Data: neccessaryIndex}
 			vm.push(currentFrame.locals[localIndex])
 
 		case OP_ARRAY_STORE:

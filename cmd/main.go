@@ -10,7 +10,7 @@ import (
 
 func main() {
 	//code, err := io.ReadAll(os.Stdin)
-	code := nbody
+	code := quick_sort
 	// Лексический анализ
 	l := lexer.NewLexer(string(code))
 	tokens, err := l.Tokenize()
@@ -68,4 +68,6 @@ func main() {
 
 		fmt.Printf("VM error: %v\n", err)
 	}
+
+	virtualMachine.PrintHeapSize()
 }

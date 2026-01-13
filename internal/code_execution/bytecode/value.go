@@ -19,4 +19,5 @@ const (
 	ValString
 	ValBool
 	ValNil
+	ValHeapPtr
 )

@@ -1,29 +1,24 @@
 package bytecode
 
 type GarbageCollector struct {
-	heap *[]Array
 }
 
-func NewGarbageCollector(heap *[]Array) *GarbageCollector {
-	return &GarbageCollector{heap: heap}
-}
-
-func (gc *GarbageCollector) Clear() {
-	for i, array := range *gc.heap {
-		if array.getReferenceCount() == 0 {
-			*(gc.heap) = append((*(gc.heap))[:i], (*(gc.heap))[i+1:]...)
+func (gc *GarbageCollector) Collect(heapPtr *[]Array, frames []Frame, frameIndex int) {
+	mark := make(map[int]struct{})
+	for i, frame := range frames {
+		if i == frameIndex {
+			continue
+		}
+		for _, local := range frame.locals {
+			if local.Type != ValHeapPtr {
+				continue
+			}
+			mark[local.Data.(int)] = struct{}{}
 		}
 	}
-}
-
-func (gc *GarbageCollector) OnReturnReferenceDecrement() {
-	for _, array := range *gc.heap {
-		array.decrementReference()
+	heap2 := make([]Array, len(mark))
+	for k, _ := range mark {
+		heap2 = append(heap2, (*heapPtr)[k])
 	}
-}
-
-func (gc *GarbageCollector) OnCallReferenceIncrement() {
-	for _, array := range *gc.heap {
-		array.incrementReference()
-	}
+	*heapPtr = heap2
 }

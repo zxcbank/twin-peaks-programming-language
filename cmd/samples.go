@@ -414,4 +414,28 @@ print(ret);
 	arr float[1];
 	arr[0] = 2;
 	print(arr[0]);`
+
+	simple_gc_check = `
+	fn array_init() {
+		arr int[10];
+		i int;
+		for (i = 0; i < 2; i = i + 1) {
+			arr[i]=i;
+		}	
+	}	
+
+	array_init();
+	array_init();
+`
+	loop_gc_check = `
+		i int;
+		for (i = 0; i < 10; i = i + 1) {
+			arr int[10];
+			arr[i] = i*90;
+		}
+		j int;
+		for (j = 0; j < 10; j = j + 1) {
+			print(arr[j]);
+		}
+	`
 )
