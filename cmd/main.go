@@ -10,7 +10,7 @@ import (
 
 func main() {
 	//code, err := io.ReadAll(os.Stdin)
-	code := quick_sort
+	code := nbody
 	// Лексический анализ
 	l := lexer.NewLexer(string(code))
 	tokens, err := l.Tokenize()

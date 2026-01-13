@@ -446,6 +446,9 @@ func (vm *VM) Run() error {
 func (vm *VM) push(value Value) {
 	vm.sp++
 	vm.stack[vm.sp] = value
+	if value.Data == nil {
+		fmt.Printf("Pushed: nil, instr [%d]: %s\n", vm.ip-1, vm.bytecode.Instructions[vm.ip-1].String())
+	}
 }
 
 func (vm *VM) pop() Value {

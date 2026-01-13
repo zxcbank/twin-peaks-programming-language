@@ -215,5 +215,209 @@ print(arr[0]);
 	`
 
 	float_expression = `
-	print(3.1 + 7.1)`
+	pi float;
+	pi = 3.141592653589793e-10 * 1.0e+10;
+	
+	print(-pi);
+`
+	nbody = `
+	PI float;
+	SOLAR_MASS float;
+	DAYS_PER_YEAR float;
+
+fn setBody(bodies float, idx int, x float, y float, z float, vx float, vy float, vz float, mass float) {
+    
+	base int;
+    base = idx * 7;
+    bodies[base+0] = x;
+    bodies[base+1] = y;
+    bodies[base+2] = z;
+    bodies[base+3] = vx;
+    bodies[base+4] = vy;
+    bodies[base+5] = vz;
+    bodies[base+6] = mass;
+}
+
+fn offsetMomentum(bodies float, idx int, px float, py float, pz float, SOLAR_MASS float) {
+    base int;
+    base = idx * 7;
+    bodies[base+3] = -px / SOLAR_MASS;
+    bodies[base+4] = -py / SOLAR_MASS;
+    bodies[base+5] = -pz / SOLAR_MASS;
+}
+
+fn energy(bodies float, size int) float {
+    e float;
+    e = 0.0;
+    i int;
+    j int;
+    for (i = 0; i < size; i = i + 1) {
+        base_i int;
+        base_i = i * 7;
+        mass_i float;
+        mass_i = bodies[base_i+6];
+        vx float; vy float; vz float;
+        vx = bodies[base_i+3];
+        vy = bodies[base_i+4];
+        vz = bodies[base_i+5];
+        e = e + 0.5 * mass_i * (vx*vx + vy*vy + vz*vz);
+        for (j = i + 1; j < size; j = j + 1) {
+            base_j int;
+            base_j = j * 7;
+            dx float; dy float; dz float; distance float;
+            dx = bodies[base_i+0] - bodies[base_j+0];
+            dy = bodies[base_i+1] - bodies[base_j+1];
+            dz = bodies[base_i+2] - bodies[base_j+2];
+            distance = sqrt(dx*dx + dy*dy + dz*dz);
+            e = e - (mass_i * bodies[base_j+6]) / distance;
+        }
+    }
+	print(e);
+    return e;
+}
+
+fn advance(bodies float, size int, dt float) {
+    i int;
+    j int;
+    for (i = 0; i < size; i = i + 1) {
+        base_i int;
+        base_i = i * 7;
+        mass_i float;
+        mass_i = bodies[base_i+6];
+        for (j = i + 1; j < size; j = j + 1) {
+            base_j int;
+            base_j = j * 7;
+            dx float; dy float; dz float; distance float; mag float;
+            dx = bodies[base_i+0] - bodies[base_j+0];
+            dy = bodies[base_i+1] - bodies[base_j+1];
+            dz = bodies[base_i+2] - bodies[base_j+2];
+            distance = sqrt(dx*dx + dy*dy + dz*dz);
+            mag = dt / (distance * distance * distance);
+            bodies[base_i+3] = bodies[base_i+3] - dx * bodies[base_j+6] * mag;
+            bodies[base_i+4] = bodies[base_i+4] - dy * bodies[base_j+6] * mag;
+            bodies[base_i+5] = bodies[base_i+5] - dz * bodies[base_j+6] * mag;
+            bodies[base_j+3] = bodies[base_j+3] + dx * mass_i * mag;
+            bodies[base_j+4] = bodies[base_j+4] + dy * mass_i * mag;
+            bodies[base_j+5] = bodies[base_j+5] + dz * mass_i * mag;
+        }
+    }
+    for (i = 0; i < size; i = i + 1) {
+        base_i int;
+        base_i = i * 7;
+        bodies[base_i+0] = bodies[base_i+0] + dt * bodies[base_i+3];
+        bodies[base_i+1] = bodies[base_i+1] + dt * bodies[base_i+4];
+        bodies[base_i+2] = bodies[base_i+2] + dt * bodies[base_i+5];
+    }
+}
+
+PI = 3.141592653589793;
+SOLAR_MASS = 4.0 * PI * PI;
+DAYS_PER_YEAR = 365.24;
+
+fn setJupiter(bodies float, DAYS_PER_YEAR float, SOLAR_MASS float) {
+    setBody(bodies, 1,
+        4.84143144246472090e+00,
+        -1.16032004402742839e+00,
+        -1.03622044471123109e-01,
+        1.66007664274403694e-03 * DAYS_PER_YEAR,
+        7.69901118419740425e-03 * DAYS_PER_YEAR,
+        -6.90460016972063023e-05 * DAYS_PER_YEAR,
+        9.54791938424326609e-04 * SOLAR_MASS
+    );
+}
+
+fn setSaturn(bodies float, DAYS_PER_YEAR float, SOLAR_MASS float) {
+    setBody(bodies, 2,
+        8.34336671824457987e+00,
+        4.12479856412430479e+00,
+        -4.03523417114321381e-01,
+        -2.76742510726862411e-03 * DAYS_PER_YEAR,
+        4.99852801234917238e-03 * DAYS_PER_YEAR,
+        2.30417297573763929e-05 * DAYS_PER_YEAR,
+        2.85885980666130812e-04 * SOLAR_MASS
+    );
+}
+
+fn setUranus(bodies float, DAYS_PER_YEAR float, SOLAR_MASS float) {
+    setBody(bodies, 3,
+        1.28943695621391310e+01,
+        -1.51111514016986312e+01,
+        -2.23307578892655734e-01,
+        2.96460137564761618e-03 * DAYS_PER_YEAR,
+        2.37847173959480950e-03 * DAYS_PER_YEAR,
+        -2.96589568540237556e-05 * DAYS_PER_YEAR,
+        4.36624404335156298e-05 * SOLAR_MASS
+    );
+}
+
+fn setNeptune(bodies float, DAYS_PER_YEAR float, SOLAR_MASS float) {
+    setBody(bodies, 4,
+        1.53796971148509165e+01,
+        -2.59193146099879641e+01,
+        1.79258772950371181e-01,
+        2.68067772490389322e-03 * DAYS_PER_YEAR,
+        1.62824170038242295e-03 * DAYS_PER_YEAR,
+        -9.51592254519715870e-05 * DAYS_PER_YEAR,
+        5.15138902046611451e-05 * SOLAR_MASS
+    );
+}
+
+fn setSun(bodies float, SOLAR_MASS float) {
+print("setsun start");
+    setBody(bodies, 0, 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, SOLAR_MASS);
+i int;
+	for (i = 0; i < 7; i = i + 1) {
+		print(bodies[i]);
+	}
+print("setsun return");
+}
+
+ret float;
+ret = 0.0;
+n int;
+for (n = 3; n <= 4; n = n * 2) { // TODO: change limit back to 24
+    bodies float[35];
+	print("setstart");
+    setSun(bodies, SOLAR_MASS);
+	print("setdone");
+    //setJupiter(bodies, DAYS_PER_YEAR, SOLAR_MASS);
+    //setSaturn(bodies, DAYS_PER_YEAR, SOLAR_MASS);
+    //setUranus(bodies, DAYS_PER_YEAR, SOLAR_MASS);
+    //setNeptune(bodies, DAYS_PER_YEAR, SOLAR_MASS);
+//
+//
+    //px float; py float; pz float;
+    //px = 0.0; py = 0.0; pz = 0.0;
+    //size int;
+    //size = 5;
+    //i int;
+    //for (i = 0; i < size; i = i + 1) {
+    //    base int;
+    //    base = i * 7;
+    //    px = px + bodies[base+3] * bodies[base+6];
+    //    py = py + bodies[base+4] * bodies[base+6];
+    //    pz = pz + bodies[base+5] * bodies[base+6];
+    //}
+    //offsetMomentum(bodies, 0, px, py, pz, SOLAR_MASS);
+
+    //ret = ret + energy(bodies, size);
+    //max int;
+    //max = n * 100;
+    //for (i = 0; i < max; i = i + 1) {
+    //    advance(bodies, size, 0.01);
+    //}
+    //ret = ret + energy(bodies, size);
+}
+
+//for (n = 0; n < 7; n = n + 1) {
+//	print(bodies[n]);
+//}
+expected float;
+expected = -1.3524862408537381;
+if (ret != expected) {
+    print("ERROR (expected, got):");
+	print(expected);
+	print(ret);
+}
+`
 )
