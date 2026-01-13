@@ -10,7 +10,7 @@ import (
 
 func main() {
 	//code, err := io.ReadAll(os.Stdin)
-	code := quick_sort
+	code := sieve_of_eratosthenes
 	// Лексический анализ
 	l := lexer.NewLexer(string(code))
 	tokens, err := l.Tokenize()

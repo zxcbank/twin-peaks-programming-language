@@ -192,9 +192,9 @@ print(arr[0]);
 		return (a * seed) % k;
 	}
 	seed int; 
-	seed = 1000001;
+	seed = 100000;
 	size_t int;
-	size_t = 1000000;
+	size_t = 30000;
 	arr int[size_t];
 	t int;
 	a int;
@@ -368,8 +368,8 @@ DAYS_PER_YEAR = 365.24;
 ret float;
 ret = 0.0;
 n int;
+bodies float[35];
 for (n = 3; n <= 24; n = n * 2) { // TODO: change limit back to 24
-    bodies float[35];
 	p int;
 	for (p = 0; p < 35; p=p+1) {
 		bodies[p] = 0.00;

@@ -27,7 +27,7 @@ type VM struct {
 	bytecode *Bytecode
 	stack    []Value
 	frames   []Frame
-	heap     []Array
+	heap     []*Array
 	ip       int // Instruction Pointer
 	sp       int // Stack Pointer
 	fp       int // Frame Pointer (index into frames slice)
@@ -35,10 +35,13 @@ type VM struct {
 }
 
 func (v *VM) PrintHeapSize() {
-	fmt.Println("Heap size:", len(v.heap))
+	activeHeapElements := 0
 	for _, array := range v.heap {
-		fmt.Println(array.referenceCount)
+		if array != nil {
+			activeHeapElements++
+		}
 	}
+	fmt.Println("Heap size:", activeHeapElements)
 }
 
 type Array struct {
@@ -62,7 +65,7 @@ func (a *Array) getReferenceCount() int {
 func NewVM(bytecode *Bytecode) *VM {
 	// Create framesPtr slice with a single base frame
 	frames := make([]Frame, 1)
-	heap := make([]Array, 0)
+	heap := make([]*Array, 0)
 	//framesPtr = append(framesPtr, Frame{
 	//	locals: make([]Value, 128), // base frame locals
 	//	// returnIP/basePtr/funcInfo are zero values
@@ -335,7 +338,7 @@ func (vm *VM) Run() error {
 			}
 			frameIndex := len(vm.frames) - 1
 			vm.push(returnValue)
-			vm.gc.Collect(&vm.heap, vm.frames, frameIndex)
+			vm.gc.Collect(vm.heap, vm.frames, frameIndex)
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
@@ -353,7 +356,7 @@ func (vm *VM) Run() error {
 			}
 
 			frameIndex := len(vm.frames) - 1
-			vm.gc.Collect(&vm.heap, vm.frames, frameIndex)
+			vm.gc.Collect(vm.heap, vm.frames, frameIndex)
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
@@ -405,13 +408,24 @@ func (vm *VM) Run() error {
 					vm.fp = len(vm.frames) - 1
 				}
 			}
+
 		case OP_ARRAY_ALLOC:
 			arrLength, ok := vm.pop().Data.(int)
 			if !ok {
 				return fmt.Errorf("ARRAY_ALLOC expected intSize")
 			}
-			neccessaryIndex := len(vm.heap)
-			vm.heap = append(vm.heap, Array{arrLength, make([]Value, arrLength), 1})
+			neccessaryIndex := -1
+			newArray := &Array{arrLength, make([]Value, arrLength), 1}
+			for i, v := range vm.heap {
+				if v == nil {
+					neccessaryIndex = i
+					vm.heap[neccessaryIndex] = newArray
+				}
+			}
+			if neccessaryIndex == -1 {
+				vm.heap = append(vm.heap, newArray)
+				neccessaryIndex = len(vm.heap) - 1
+			}
 
 			localIndex := instr.Operands[0]
 			if vm.fp < 0 || vm.fp >= len(vm.frames) {
