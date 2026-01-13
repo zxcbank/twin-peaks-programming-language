@@ -29,7 +29,7 @@ func NewCompiler() *Compiler {
 		bytecode: &Bytecode{
 			Instructions: []Instruction{},
 			Constants:    []interface{}{},
-			FuncTable:    make(map[string]*FunctionInfo),
+			FuncTable:    make(map[int]*FunctionInfo),
 		},
 		currentScope: &Scope{variables: make(map[string]int)},
 		funcTable:    make(map[string]*FunctionInfo),

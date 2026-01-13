@@ -24,14 +24,39 @@ func (f *Frame) ensureLocalsSize(required int) {
 
 // Виртуальная машина
 type VM struct {
-	bytecode *Bytecode
-	stack    []Value
-	frames   []Frame
-	heap     []*Array
-	ip       int // Instruction Pointer
-	sp       int // Stack Pointer
-	fp       int // Frame Pointer (index into frames slice)
-	gc       GarbageCollector
+	bytecode    *Bytecode
+	stack       []Value
+	frames      []Frame
+	heap        []*Array
+	ip          int // Instruction Pointer
+	sp          int // Stack Pointer
+	fp          int // Frame Pointer (index into frames slice)
+	gc          GarbageCollector
+	globalCache []Value
+	opt         bool
+	cache       map[specialFunctionCall]Value
+}
+
+type specialFunctionCall struct {
+	functionHeader FunctionInfo
+	args           []Value
+}
+
+func (s *specialFunctionCall) Equal(f1, f2 specialFunctionCall) bool {
+	if f1.functionHeader != f2.functionHeader {
+		return false
+	}
+
+	if len(f1.args) != len(f2.args) {
+		return false
+	}
+
+	for i := range f1.args { // TODO: чето может с интерфейсом{} не так поойти
+		if f1.args[i] != f2.args[i] {
+			return false
+		}
+	}
+	return true
 }
 
 func (v *VM) PrintHeapSize() {
@@ -315,6 +340,22 @@ func (vm *VM) Run() error {
 		case OP_CALL:
 			funcAddr := instr.Operands[0]
 
+			funcTable := vm.bytecode.FuncTable
+			// получить количество аргументов с funcinfo
+			// сохранить их с стека
+			// сравнить аргуметы
+			// проверить мапу
+			//подменить на const
+			//поменять байткод
+			//переставить ip-- куда надо
+			funcHeader := *funcTable[funcAddr]
+			numArgs := funcHeader.ParamCount
+			args := vm.peek(numArgs)
+			spFunctionCall := specialFunctionCall{functionHeader: funcHeader, args: args}
+			if _, ok := vm.cache[spFunctionCall]; ok {
+				val := vm.cache[spFunctionCall]
+				vm.
+			}
 			// Создаем новый фрейм
 			frame := Frame{
 				returnIP: vm.ip,

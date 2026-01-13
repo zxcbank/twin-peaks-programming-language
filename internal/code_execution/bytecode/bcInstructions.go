@@ -59,7 +59,7 @@ func (i Instruction) String() string {
 type Bytecode struct {
 	Instructions []Instruction
 	Constants    []interface{}
-	FuncTable    map[string]*FunctionInfo
+	FuncTable    map[int]*FunctionInfo
 	programStart int
 }
 
