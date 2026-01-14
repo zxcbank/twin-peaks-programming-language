@@ -13,6 +13,7 @@ func (i Instruction) String() string {
 		OP_CONST:        "CONST",
 		OP_LOAD:         "LOAD",
 		OP_STORE:        "STORE",
+		OP_POP:          "POP",
 		OP_ADD:          "ADD",
 		OP_SUB:          "SUB",
 		OP_MUL:          "MUL",
@@ -36,9 +37,6 @@ func (i Instruction) String() string {
 		OP_SQRT:         "SQRT",
 		OP_HALT:         "HALT",
 		OP_RETURN_VOID:  "RETURN_VOID",
-		OP_LOAD_ARG:     "LOAD_ARG",
-		OP_ENTER:        "ENTER",
-		OP_LEAVE:        "LEAVE",
 		OP_ARRAY_ALLOC:  "ARRAY_ALLOC",
 		OP_ARRAY_LOAD:   "ARRAY_LOAD",
 		OP_ARRAY_STORE:  "ARRAY_STORE",
@@ -55,12 +53,25 @@ func (i Instruction) String() string {
 	return fmt.Sprintf("%s %v", name, i.Operands)
 }
 
+func (i Instruction) isReturn() bool {
+	return i.Opcode == OP_RETURN || i.Opcode == OP_RETURN_VOID
+}
+
+func (i Instruction) hasSideEffects() bool {
+	switch i.Opcode { // TODO: May JMP have side effects?
+	case OP_PRINT, OP_CALL, OP_ARRAY_STORE, OP_ARRAY_LOAD, OP_HALT, OP_RETURN, OP_RETURN_VOID:
+		return true
+	default:
+		return false
+	}
+}
+
 // Байт-код программы
 type Bytecode struct {
-	Instructions []Instruction
-	Constants    []interface{}
-	FuncTable    map[int]*FunctionInfo
-	programStart int
+	Instructions  []Instruction
+	Constants     []interface{}
+	FuncAddresses map[int]*FunctionInfo
+	programStart  int
 }
 
 // Контекст функции

@@ -5,6 +5,7 @@ const (
 	OP_CONST        byte = iota // Загрузить константу
 	OP_LOAD                     // Загрузить переменную
 	OP_STORE                    // Сохранить в переменную
+	OP_POP                      // Удалить верхнее значение стека
 	OP_ADD                      // Сложение
 	OP_SUB                      // Вычитание
 	OP_MUL                      // Умножение
@@ -29,9 +30,6 @@ const (
 	OP_HALT // Остановка
 
 	OP_RETURN_VOID
-	OP_LOAD_ARG // TODO: Подумать, нужно ли это
-	OP_ENTER    // TODO: Подумать, нужно ли это
-	OP_LEAVE    // TODO: Подумать, нужно ли это
 
 	OP_ARRAY_ALLOC
 	OP_ARRAY_LOAD

@@ -3,26 +3,27 @@ package bytecode
 type GarbageCollector struct {
 }
 
-func (gc *GarbageCollector) Collect(heap []*Array, frames []Frame, frameIndex int) {
-	markActiveArrPtrs := make(map[int]struct{})
+func (gc *GarbageCollector) Collect(heap []*Array, frames []Frame, removedFrameIndex int) {
+	markActivePtrs := make(map[int]struct{})
 	for i, frame := range frames {
-		if i == frameIndex {
+		if i == removedFrameIndex {
 			continue
 		}
 		for _, local := range frame.locals {
 			if local.Type != ValHeapPtr {
 				continue
 			}
-			markActiveArrPtrs[local.Data.(int)] = struct{}{}
+			markActivePtrs[local.Data.(int)] = struct{}{}
 		}
 	}
 
-	for _, valueToDelete := range frames[frameIndex].locals {
+	for _, valueToDelete := range frames[removedFrameIndex].locals {
 		if valueToDelete.Type != ValHeapPtr {
 			continue
 		}
-		if _, ok := markActiveArrPtrs[valueToDelete.Data.(int)]; !ok {
-			heap[valueToDelete.Data.(int)] = nil
+		ptr := valueToDelete.Data.(int)
+		if _, ok := markActivePtrs[ptr]; !ok {
+			heap[ptr] = nil
 		}
 	}
 }

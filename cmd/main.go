@@ -62,7 +62,7 @@ func main() {
 	//
 	//// Выполнение на виртуальной машине
 	fmt.Println("\nExecution:")
-	virtualMachine := bytecode.NewVM(bc)
+	virtualMachine := bytecode.NewVM(bc, true)
 
 	if err := virtualMachine.Run(); err != nil {
 

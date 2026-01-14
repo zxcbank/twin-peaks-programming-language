@@ -24,44 +24,21 @@ func (f *Frame) ensureLocalsSize(required int) {
 
 // Виртуальная машина
 type VM struct {
-	bytecode    *Bytecode
-	stack       []Value
-	frames      []Frame
-	heap        []*Array
-	ip          int // Instruction Pointer
-	sp          int // Stack Pointer
-	fp          int // Frame Pointer (index into frames slice)
-	gc          GarbageCollector
-	globalCache []Value
-	opt         bool
-	cache       map[specialFunctionCall]Value
+	bytecode   *Bytecode
+	stack      []Value
+	frames     []Frame
+	heap       []*Array
+	ip         int // Instruction Pointer
+	sp         int // Stack Pointer
+	fp         int // Frame Pointer (index into frames slice)
+	gc         GarbageCollector
+	jit        *JITCompiler
+	jitEnabled bool
 }
 
-type specialFunctionCall struct {
-	functionHeader FunctionInfo
-	args           []Value
-}
-
-func (s *specialFunctionCall) Equal(f1, f2 specialFunctionCall) bool {
-	if f1.functionHeader != f2.functionHeader {
-		return false
-	}
-
-	if len(f1.args) != len(f2.args) {
-		return false
-	}
-
-	for i := range f1.args { // TODO: чето может с интерфейсом{} не так поойти
-		if f1.args[i] != f2.args[i] {
-			return false
-		}
-	}
-	return true
-}
-
-func (v *VM) PrintHeapSize() {
+func (vm *VM) PrintHeapSize() {
 	activeHeapElements := 0
-	for _, array := range v.heap {
+	for _, array := range vm.heap {
 		if array != nil {
 			activeHeapElements++
 		}
@@ -70,41 +47,25 @@ func (v *VM) PrintHeapSize() {
 }
 
 type Array struct {
-	size           int
-	Array          []Value
-	referenceCount int //  ?? we had them heappas in twin-peaks-pr0gramming-lаn9ua9e
+	size  int
+	Array []Value
 }
 
-func (a *Array) incrementReference() {
-	a.referenceCount++
-}
-
-func (a *Array) decrementReference() {
-	a.referenceCount--
-}
-
-func (a *Array) getReferenceCount() int {
-	return a.referenceCount
-}
-
-func NewVM(bytecode *Bytecode) *VM {
+func NewVM(bytecode *Bytecode, jitEnabled bool) *VM {
 	// Create framesPtr slice with a single base frame
 	frames := make([]Frame, 1)
 	heap := make([]*Array, 0)
-	//framesPtr = append(framesPtr, Frame{
-	//	locals: make([]Value, 128), // base frame locals
-	//	// returnIP/basePtr/funcInfo are zero values
-	//})
-	gc := GarbageCollector{}
 	return &VM{
-		bytecode: bytecode,
-		stack:    make([]Value, 1024*1024*1024),
-		heap:     heap,
-		frames:   frames,
-		ip:       bytecode.programStart,
-		sp:       -1,
-		fp:       0, // index of current frame
-		gc:       gc,
+		bytecode:   bytecode,
+		stack:      make([]Value, 1024*1024*1024),
+		heap:       heap,
+		frames:     frames,
+		ip:         bytecode.programStart,
+		sp:         -1,
+		fp:         0, // index of current frame
+		gc:         GarbageCollector{},
+		jit:        NewJITCompiler(bytecode),
+		jitEnabled: jitEnabled,
 	}
 }
 
@@ -147,6 +108,13 @@ func (vm *VM) Run() error {
 			currentFrame := &vm.frames[vm.fp]
 			currentFrame.ensureLocalsSize(localIndex + 1)
 			currentFrame.locals[localIndex] = value
+
+		case OP_POP:
+			// Удаляем значение с вершины стека
+			if vm.sp < 0 {
+				return fmt.Errorf("stack underflow")
+			}
+			vm.pop()
 
 		case OP_ADD:
 			if err := vm.binaryOp(func(a, b Value) Value {
@@ -340,7 +308,7 @@ func (vm *VM) Run() error {
 		case OP_CALL:
 			funcAddr := instr.Operands[0]
 
-			funcTable := vm.bytecode.FuncTable
+			//funcTable := vm.bytecode.FuncTable
 			// получить количество аргументов с funcinfo
 			// сохранить их с стека
 			// сравнить аргуметы
@@ -348,38 +316,60 @@ func (vm *VM) Run() error {
 			//подменить на const
 			//поменять байткод
 			//переставить ip-- куда надо
-			funcHeader := *funcTable[funcAddr]
-			numArgs := funcHeader.ParamCount
-			args := vm.peek(numArgs)
-			spFunctionCall := specialFunctionCall{functionHeader: funcHeader, args: args}
-			if _, ok := vm.cache[spFunctionCall]; ok {
-				val := vm.cache[spFunctionCall]
-				vm.
-			}
+			//funcHeader := *funcTable[funcAddr]
+			//numArgs := funcHeader.ParamCount
+			//args := vm.peek(numArgs)
+			//spFunctionCall := specialFunctionCall{functionHeader: funcHeader, args: args}
+			//if _, ok := vm.cache[spFunctionCall]; ok {
+			//	val := vm.cache[spFunctionCall]
+			//	vm.
+			//}
+			// попробовать JIT компиляцию, если уже встречалась (заменили на JMP) - заново прочитать инструкцию
+			// если нет
+
 			// Создаем новый фрейм
 			frame := Frame{
 				returnIP: vm.ip,
 				basePtr:  vm.fp,
 				locals:   make([]Value, 0),
+				funcInfo: vm.bytecode.FuncAddresses[funcAddr],
 			}
+
 			vm.frames = append(vm.frames, frame)
 			// FP is index of current frame (last one)
 			vm.fp = len(vm.frames) - 1
+
+			if vm.jitEnabled {
+				args := make([]Value, frame.funcInfo.ParamCount)
+				for i := 0; i < frame.funcInfo.ParamCount; i++ {
+					args[i] = vm.stack[vm.sp-i]
+				}
+				if jitResult, newIP := vm.jit.GetCompiledAddress(vm.ip-1, args); jitResult == FuncJITCompiled {
+					vm.ip = newIP
+					break
+				}
+			}
 
 			// Переходим к функции
 			vm.ip = funcAddr
 
 		case OP_RETURN:
 			// Возвращаемое значение на вершине стека
-			returnValue := vm.pop()
+			returnValue := vm.stack[vm.sp]
 
 			// Восстанавливаем предыдущий фрейм
 			if len(vm.frames) == 0 {
 				return fmt.Errorf("no frame to return to")
 			}
 			frameIndex := len(vm.frames) - 1
-			vm.push(returnValue)
+			//vm.push(returnValue)
+			if vm.jitEnabled {
+				info := vm.frames[frameIndex].funcInfo
+				vm.jit.NotifyReturn(info.Address, vm.frames[frameIndex].locals[:info.ParamCount], returnValue)
+			}
+
 			vm.gc.Collect(vm.heap, vm.frames, frameIndex)
+
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
@@ -397,75 +387,38 @@ func (vm *VM) Run() error {
 			}
 
 			frameIndex := len(vm.frames) - 1
+
+			if vm.jitEnabled {
+				info := vm.frames[frameIndex].funcInfo
+				vm.jit.NotifyReturn(info.Address, vm.frames[frameIndex].locals[:info.ParamCount], Value{Type: ValNil})
+			}
+
 			vm.gc.Collect(vm.heap, vm.frames, frameIndex)
+
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
 			vm.ip = frame.returnIP
 			vm.fp = frame.basePtr
 			// Пушим nil для void функций
-			vm.push(Value{Type: ValNil})
-
-		case OP_LOAD_ARG:
-			// Загрузка аргумента из текущего фрейма
-			argIndex := instr.Operands[0]
-			if vm.fp < 0 || vm.fp >= len(vm.frames) {
-				return fmt.Errorf("no active frame")
-			}
-
-			currentFrame := &vm.frames[vm.fp]
-			// grow locals if needed so caller can access args even if OP_ENTER wasn't emitted
-			currentFrame.ensureLocalsSize(argIndex + 1)
-
-			vm.push(currentFrame.locals[argIndex])
-
-		case OP_ENTER:
-			// Инициализация фрейма (может использоваться для выделения локальных)
-			localCount := instr.Operands[0]
-			if vm.fp < 0 || vm.fp >= len(vm.frames) {
-				return fmt.Errorf("no active frame for enter: %d", vm.fp)
-			}
-			currentFrame := &vm.frames[vm.fp]
-			// Ensure at least localCount slots
-			if localCount <= 0 {
-				// keep current locals as-is (but ensure non-nil)
-				if len(currentFrame.locals) == 0 {
-					currentFrame.locals = make([]Value, 0)
-				}
-			} else {
-				currentFrame.locals = make([]Value, localCount)
-			}
-
-		case OP_LEAVE:
-			// Очистка фрейма
-			if len(vm.frames) > 0 {
-				vm.frames = vm.frames[:len(vm.frames)-1]
-				// adjust fp
-				if len(vm.frames) == 0 {
-					// restore base frame
-					vm.frames = append(vm.frames, Frame{locals: make([]Value, 128)})
-					vm.fp = 0
-				} else {
-					vm.fp = len(vm.frames) - 1
-				}
-			}
+			//vm.push(Value{Type: ValNil})
 
 		case OP_ARRAY_ALLOC:
 			arrLength, ok := vm.pop().Data.(int)
 			if !ok {
 				return fmt.Errorf("ARRAY_ALLOC expected intSize")
 			}
-			neccessaryIndex := -1
-			newArray := &Array{arrLength, make([]Value, arrLength), 1}
+			heapPointer := -1
+			newArray := &Array{arrLength, make([]Value, arrLength)}
 			for i, v := range vm.heap {
 				if v == nil {
-					neccessaryIndex = i
-					vm.heap[neccessaryIndex] = newArray
+					heapPointer = i
+					vm.heap[heapPointer] = newArray
 				}
 			}
-			if neccessaryIndex == -1 {
+			if heapPointer == -1 {
 				vm.heap = append(vm.heap, newArray)
-				neccessaryIndex = len(vm.heap) - 1
+				heapPointer = len(vm.heap) - 1
 			}
 
 			localIndex := instr.Operands[0]
@@ -475,7 +428,7 @@ func (vm *VM) Run() error {
 			// ensure locals capacity
 			currentFrame := &vm.frames[vm.fp]
 			currentFrame.ensureLocalsSize(localIndex + 1)
-			currentFrame.locals[localIndex] = Value{Type: ValHeapPtr, Data: neccessaryIndex}
+			currentFrame.locals[localIndex] = Value{Type: ValHeapPtr, Data: heapPointer}
 			vm.push(currentFrame.locals[localIndex])
 
 		case OP_ARRAY_STORE:
@@ -622,7 +575,7 @@ func valueGT(a, b Value) Value {
 	case bool:
 		if bVal, ok := b.Data.(bool); ok {
 			// true > false
-			return Value{Data: (aVal && !bVal)}
+			return Value{Data: aVal && !bVal}
 		}
 	}
 	return Value{Data: false}

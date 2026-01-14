@@ -27,9 +27,9 @@ type Scope struct {
 func NewCompiler() *Compiler {
 	return &Compiler{
 		bytecode: &Bytecode{
-			Instructions: []Instruction{},
-			Constants:    []interface{}{},
-			FuncTable:    make(map[int]*FunctionInfo),
+			Instructions:  []Instruction{},
+			Constants:     []interface{}{},
+			FuncAddresses: make(map[int]*FunctionInfo),
 		},
 		currentScope: &Scope{variables: make(map[string]int)},
 		funcTable:    make(map[string]*FunctionInfo),
@@ -44,31 +44,20 @@ func (c *Compiler) Compile(ast *parser.ASTNode) (*Bytecode, error) {
 		return nil, fmt.Errorf("expected Program node")
 	}
 
-	//// Первый проход: собираем информацию о функциях
-	//for _, child := range ast.Children {
-	//	if child.Type == parser.NodeFuncDecl {
-	//		funcName := child.Value.(string)
-	//		c.bytecode.FuncTable[funcName] = &FunctionInfo{
-	//			Name:       funcName,
-	//			Address:    len(c.bytecode.Instructions),
-	//			ParamCount: len(child.Children[0].Children),
-	//		}
-	//	}
-	//}
-
-	// Второй проход: компилируем код
 	for _, child := range ast.Children {
 		if err := c.compileNode(child); err != nil {
 			return nil, err
 		}
 	}
 
-	// Добавляем HALT в конце программы
 	c.emit(OP_HALT)
 
-	// Попытка разрешить все отложенные переходы
 	if err := c.resolveUnresolvedLabels(); err != nil {
 		return nil, err
+	}
+
+	for _, info := range c.funcTable {
+		c.bytecode.FuncAddresses[info.Address] = info
 	}
 
 	return c.bytecode, nil

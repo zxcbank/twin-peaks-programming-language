@@ -192,7 +192,7 @@ print(arr[0]);
 		return (a * seed) % k;
 	}
 	seed int; 
-	seed = 100000;
+	seed = 1000001;
 	size_t int;
 	size_t = 30000;
 	arr int[size_t];
@@ -427,15 +427,48 @@ print(ret);
 	array_init();
 	array_init();
 `
-	loop_gc_check = `
+	function_optimization = `
+	fn sum_range(n int) int {
+		s int;
+		s = 0;
 		i int;
-		for (i = 0; i < 10; i = i + 1) {
-			arr int[10];
-			arr[i] = i*90;
+		for (i = 1; i <= n; i = i + 1) {
+			s = s + i;
 		}
-		j int;
-		for (j = 0; j < 10; j = j + 1) {
-			print(arr[j]);
+		return s;
+	}
+	i int;	
+	param int;
+	param = 100;
+	result int;
+	correct int;
+	correct = (param * (param + 1)) / 2;
+	for (i = 0; i < 3; i = i + 1) {
+		result = sum_range(param);
+		if (result != correct) {
+			print("Error in sum_range (expected vs result):");
+			print(correct);
+			print(result);
+			
 		}
-	`
+	}
+	print(result);
+`
+	fibonacci = `
+	fn fibonacci(n int) int {
+		if (n <= 1) {
+			return n;
+		}
+		return fibonacci(n - 1) + fibonacci(n - 2);
+	}
+	result int;
+	//i int;
+	//for (i = 1; i < 10; i = i + 1) {
+	//	result = fibonacci(i);
+	//	print(result);
+	//}
+	result = fibonacci(3);
+	result = fibonacci(2);
+	print(result);
+`
 )
