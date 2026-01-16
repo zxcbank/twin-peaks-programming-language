@@ -4,42 +4,42 @@ import "fmt"
 
 type Instruction struct {
 	Opcode   byte
-	Operands []int // сомнительно но окей
-	Line     int   // Для отладки
+	Operands []int
+	Line     int
 }
 
 func (i Instruction) String() string {
 	opcodeNames := map[byte]string{
-		OP_CONST:        "CONST",
-		OP_LOAD:         "LOAD",
-		OP_STORE:        "STORE",
-		OP_POP:          "POP",
-		OP_ADD:          "ADD",
-		OP_SUB:          "SUB",
-		OP_MUL:          "MUL",
-		OP_DIV:          "DIV",
-		OP_MOD:          "MOD",
-		OP_NEG:          "NEG",
-		OP_EQ:           "EQ",
-		OP_NEQ:          "NEQ",
-		OP_LT:           "LT",
-		OP_LE:           "LE",
-		OP_GT:           "GT",
-		OP_GE:           "GE",
-		OP_AND:          "AND",
-		OP_OR:           "OR",
-		OP_NOT:          "NOT",
-		OP_JMP:          "JMP",
-		OP_JMP_IF_FALSE: "JMP_IF_FALSE",
-		OP_CALL:         "CALL",
-		OP_RETURN:       "RETURN",
-		OP_PRINT:        "PRINT",
-		OP_SQRT:         "SQRT",
-		OP_HALT:         "HALT",
-		OP_RETURN_VOID:  "RETURN_VOID",
-		OP_ARRAY_ALLOC:  "ARRAY_ALLOC",
-		OP_ARRAY_LOAD:   "ARRAY_LOAD",
-		OP_ARRAY_STORE:  "ARRAY_STORE",
+		OpConst:      "CONST",
+		OpLoad:       "LOAD",
+		OpStore:      "STORE",
+		OpPop:        "POP",
+		OpAdd:        "ADD",
+		OpSub:        "SUB",
+		OpMul:        "MUL",
+		OpDiv:        "DIV",
+		OpMod:        "MOD",
+		OpNeg:        "NEG",
+		OpEq:         "EQ",
+		OpNeq:        "NEQ",
+		OpLt:         "LT",
+		OpLe:         "LE",
+		OpGt:         "GT",
+		OpGe:         "GE",
+		OpAnd:        "AND",
+		OpOr:         "OR",
+		OpNot:        "NOT",
+		OpJmp:        "JMP",
+		OpJmpIfFalse: "JMP_IF_FALSE",
+		OpCall:       "CALL",
+		OpReturn:     "RETURN",
+		OpPrint:      "PRINT",
+		OpSqrt:       "SQRT",
+		OpHalt:       "HALT",
+		OpReturnVoid: "RETURN_VOID",
+		OpArrayAlloc: "ARRAY_ALLOC",
+		OpArrayLoad:  "ARRAY_LOAD",
+		OpArrayStore: "ARRAY_STORE",
 	}
 
 	name := opcodeNames[i.Opcode]
@@ -54,19 +54,22 @@ func (i Instruction) String() string {
 }
 
 func (i Instruction) isReturn() bool {
-	return i.Opcode == OP_RETURN || i.Opcode == OP_RETURN_VOID
+	return i.Opcode == OpReturn || i.Opcode == OpReturnVoid
+}
+
+func (i Instruction) isJump() bool {
+	return i.Opcode == OpJmp || i.Opcode == OpJmpIfFalse
 }
 
 func (i Instruction) hasSideEffects() bool {
-	switch i.Opcode { // TODO: May JMP have side effects?
-	case OP_PRINT, OP_CALL, OP_ARRAY_STORE, OP_ARRAY_LOAD, OP_HALT, OP_RETURN, OP_RETURN_VOID:
+	switch i.Opcode {
+	case OpPrint, OpCall, OpArrayStore, OpArrayLoad, OpHalt:
 		return true
 	default:
 		return false
 	}
 }
 
-// Байт-код программы
 type Bytecode struct {
 	Instructions  []Instruction
 	Constants     []interface{}
@@ -74,7 +77,7 @@ type Bytecode struct {
 	programStart  int
 }
 
-// Контекст функции
+// FuncContext is function's compilation context
 type FuncContext struct {
 	Name        string
 	Address     int
@@ -83,7 +86,7 @@ type FuncContext struct {
 	ReturnLabel int
 }
 
-// Информация о функции для таблицы
+// FunctionInfo runtime information about a function
 type FunctionInfo struct {
 	Name       string
 	Address    int

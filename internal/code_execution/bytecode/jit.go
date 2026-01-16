@@ -7,8 +7,7 @@ type FuncKind int
 const (
 	FuncJITCompiled           FuncKind = iota
 	FuncPendingCompiledReturn          // waiting for return value to cache
-	//FuncOtherArgsCompiled              // compiled with different arguments
-	FuncCallingDynamic // may be compiled if all child functions become compiled
+	FuncCallingDynamic                 // may be compiled if all child functions become compiled
 	FuncDynamic
 )
 
@@ -90,7 +89,7 @@ func (jit *JITCompiler) GetCompiledAddress(callInstructionIndex int, args []Valu
 			}
 			jit.pendingReturn[funcAddr] = append(jit.pendingReturn[funcAddr], &currentCallInfo)
 			// is compiled but with different arguments
-			return FuncDynamic, int(funcAddr) // FuncOtherArgsCompiled
+			return FuncDynamic, int(funcAddr)
 		}
 	}
 	for _, arg := range args {
@@ -100,10 +99,14 @@ func (jit *JITCompiler) GetCompiledAddress(callInstructionIndex int, args []Valu
 		}
 	}
 
+	var farthestJump int
 	// Check if function's instructions can be JIT compiled
 	for i := int(funcAddr); i < len(jit.bytecode.Instructions); i++ {
 		inst := jit.bytecode.Instructions[i]
-		if inst.isReturn() {
+		if inst.isJump() {
+			farthestJump = max(farthestJump, inst.Operands[0])
+		}
+		if inst.isReturn() && i >= farthestJump {
 			jit.pendingReturn[funcAddr] = append(jit.pendingReturn[funcAddr], &currentCallInfo)
 			jit.seenFunctions[funcAddr] = &funcJITInfo{
 				Kind:            FuncPendingCompiledReturn,
@@ -112,7 +115,7 @@ func (jit *JITCompiler) GetCompiledAddress(callInstructionIndex int, args []Valu
 			return FuncPendingCompiledReturn, int(funcAddr) // will compile after return value is known
 		}
 
-		if inst.Opcode == OP_CALL {
+		if inst.Opcode == OpCall {
 			compilable, kind := jit.checkCallCompilable(FuncAddress(inst.Operands[0]), funcAddr)
 			if !compilable {
 				return kind, int(funcAddr)
@@ -134,7 +137,7 @@ func (jit *JITCompiler) NotifyReturn(funcAddrInt int, inputValues []Value, retur
 	if callInfos, ok := jit.pendingReturn[funcAddr]; ok {
 		callInfo, idx := findCallInfo(callInfos, callInfo{args: inputValues})
 		if callInfo == nil {
-			return // None pending compilation for these arguments
+			return
 		}
 		callInfo.result = returnValue
 		funcInfo := jit.seenFunctions[funcAddr]
@@ -156,7 +159,6 @@ func (jit *JITCompiler) NotifyReturn(funcAddrInt int, inputValues []Value, retur
 func (jit *JITCompiler) checkCallCompilable(calledFuncAddr, funcAddr FuncAddress) (bool, FuncKind) {
 
 	calledFuncInfo, ok := jit.seenFunctions[calledFuncAddr]
-	// called function was not seen before
 	if !ok {
 		jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncCallingDynamic, CompiledAddress: int(funcAddr)}
 		return false, FuncCallingDynamic
@@ -166,7 +168,7 @@ func (jit *JITCompiler) checkCallCompilable(calledFuncAddr, funcAddr FuncAddress
 	}
 
 	// called function is not compiled
-	if calledFuncInfo.Kind == FuncJITCompiled {
+	if calledFuncInfo.Kind != FuncJITCompiled {
 		jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncCallingDynamic, CompiledAddress: int(funcAddr)}
 		return false, FuncCallingDynamic
 	}
@@ -177,16 +179,15 @@ func (jit *JITCompiler) checkCallCompilable(calledFuncAddr, funcAddr FuncAddress
 func (jit *JITCompiler) compile(numArgs int, returnValue Value) int {
 	compiledAddr := len(jit.bytecode.Instructions)
 	for i := range numArgs {
-		jit.emit(OP_STORE, i)
+		jit.emit(OpStore, i)
 	}
 	if returnValue.Type != ValNil {
-		jit.emit(OP_CONST, jit.addConstant(returnValue.Data))
-		jit.emit(OP_RETURN)
+		jit.emit(OpConst, jit.addConstant(returnValue.Data))
+		jit.emit(OpReturn)
 		return compiledAddr
 	}
 
-	jit.emit(OP_RETURN_VOID)
-	//jit.emit(OP_JMP, int(returnAddr)) // jump to the instruction after function start
+	jit.emit(OpReturnVoid)
 	return compiledAddr
 }
 
@@ -215,7 +216,7 @@ func (jit *JITCompiler) addConstant(value interface{}) int {
 }
 
 func getCallAddress(inst Instruction) int {
-	if inst.Opcode != OP_CALL {
+	if inst.Opcode != OpCall {
 		return -1
 	}
 	return inst.Operands[0]

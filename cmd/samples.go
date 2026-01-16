@@ -467,8 +467,8 @@ print(ret);
 	//	result = fibonacci(i);
 	//	print(result);
 	//}
-	result = fibonacci(3);
-	result = fibonacci(2);
+	result = fibonacci(10);
+	result = fibonacci(10);
 	print(result);
 `
 )

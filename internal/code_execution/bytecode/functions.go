@@ -8,49 +8,33 @@ import (
 func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
 	funcName := node.Value.(string)
 
-	// 1. Запоминаем позицию начала функции
 	funcStart := len(c.bytecode.Instructions)
 
-	// 2. Создаем новую область видимости для функции
 	prevScope := c.currentScope
 	prevFunc := c.currentFunc
 	prevLabels := c.labels
 	prevLabelCounter := c.labelCounter
 
-	// 3. Инициализируем новую область видимости
 	c.currentScope = &Scope{
 		variables: make(map[string]int),
-		parent:    nil, // Функции имеют свою собственную область видимости
 	}
 
-	// 4. Параметры функции (первый ребенок - блок параметров)
-	paramsNode := node.Children[0] // NodeBlock с параметрами
+	paramsNode := node.Children[0]
 	paramCount := len(paramsNode.Children)
 
-	// 5. Регистрируем параметры как локальные переменные
+	// Parameters as local variables
 	for i, param := range paramsNode.Children {
 		if param.Type != parser.NodeVarDecl || len(param.Children) < 1 {
 			return fmt.Errorf("invalid parameter declaration")
 		}
 
 		paramName := param.Children[0].Value.(string)
-		c.currentScope.variables[paramName] = i // Параметры начинаются с индекса 0
+		c.currentScope.variables[paramName] = i
 	}
-
-	// 6. Возвращаемый тип (второй ребенок)
-	returnTypeNode := node.Children[1]
-	_ = returnTypeNode // TODO: Можем использовать для проверки типов
-
-	// 7. Тело функции (третий ребенок)
-	bodyNode := node.Children[2]
-
-	// 8. Генерируем пролог функции (сохранение параметров из стека в локальные)
-	// Когда функция вызывается, аргументы уже лежат на стеке
 	for i := 0; i < paramCount; i++ {
-		c.emit(OP_STORE, i)
+		c.emit(OpStore, i)
 	}
 
-	// 9. Сохраняем текущий контекст функции
 	c.currentFunc = &FuncContext{
 		Name:       funcName,
 		Address:    funcStart,
@@ -58,11 +42,9 @@ func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
 		HasReturn:  false,
 	}
 
-	// 10. Сбрасываем метки для функции
-	c.labels = make(map[string]int)
-	c.labelCounter = 0
+	returnTypeNode := node.Children[1]
+	bodyNode := node.Children[2]
 
-	// Добавляем информацию о функции в таблицу
 	c.funcTable[funcName] = &FunctionInfo{
 		Name:       funcName,
 		Address:    funcStart,
@@ -71,29 +53,28 @@ func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
 		ReturnType: returnTypeNode.Value.(string),
 	}
 
-	// 11. Компилируем тело функции
+	c.labels = make(map[string]int)
+	c.labelCounter = 0
 	if err := c.compileNode(bodyNode); err != nil {
 		return err
 	}
 
-	// 12. Если функция не заканчивается RETURN, добавляем неявный return
+	// Add missing return if needed
 	if !c.currentFunc.HasReturn {
-		// Для void функций просто возвращаем nil
 		if returnTypeNode.Value == "void" {
-			c.emit(OP_RETURN_VOID)
+			c.emit(OpReturnVoid)
 		} else {
-			// Для функций, возвращающих значение, возвращаем 0
-			c.emit(OP_CONST, c.addConstant(0))
-			c.emit(OP_RETURN)
+			c.emit(OpConst, c.addConstant(0))
+			c.emit(OpReturn)
 		}
 	}
 
-	// 13. Восстанавливаем предыдущий контекст
 	c.currentScope = prevScope
 	c.currentFunc = prevFunc
 	c.labels = prevLabels
 	c.labelCounter = prevLabelCounter
 
+	// Function are stored before the main program
 	c.bytecode.programStart = len(c.bytecode.Instructions)
 
 	return nil

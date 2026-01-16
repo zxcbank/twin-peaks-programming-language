@@ -2,7 +2,7 @@ package bytecode
 
 import "fmt"
 
-// Value - значение в виртуальной машине
+// Value represents a value in vm during execution.
 type Value struct {
 	Type int
 	Data interface{}
@@ -12,7 +12,6 @@ func (v Value) String() string {
 	return fmt.Sprintf("%v", v.Data)
 }
 
-// Типы значений
 const (
 	ValInt = iota
 	ValFloat

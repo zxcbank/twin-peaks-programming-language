@@ -8,12 +8,11 @@ import (
 type Frame struct {
 	locals   []Value
 	returnIP int
-	basePtr  int // index of previous frame in framesPtr slice
+	prevFP   int
 	funcInfo *FunctionInfo
 }
 
 // ensureLocalsSize ensures the frame has at least `required` slots in locals.
-// It grows the slice using append to avoid unnecessary copying.
 func (f *Frame) ensureLocalsSize(required int) {
 	if required <= len(f.locals) {
 		return
@@ -22,7 +21,6 @@ func (f *Frame) ensureLocalsSize(required int) {
 	f.locals = append(f.locals, make([]Value, needed)...)
 }
 
-// Виртуальная машина
 type VM struct {
 	bytecode   *Bytecode
 	stack      []Value
@@ -52,17 +50,14 @@ type Array struct {
 }
 
 func NewVM(bytecode *Bytecode, jitEnabled bool) *VM {
-	// Create framesPtr slice with a single base frame
-	frames := make([]Frame, 1)
-	heap := make([]*Array, 0)
 	return &VM{
 		bytecode:   bytecode,
 		stack:      make([]Value, 1024*1024*1024),
-		heap:       heap,
-		frames:     frames,
+		heap:       make([]*Array, 0),
+		frames:     make([]Frame, 1),
 		ip:         bytecode.programStart,
 		sp:         -1,
-		fp:         0, // index of current frame
+		fp:         0,
 		gc:         GarbageCollector{},
 		jit:        NewJITCompiler(bytecode),
 		jitEnabled: jitEnabled,
@@ -73,10 +68,8 @@ func (vm *VM) Run() error {
 	for vm.ip < len(vm.bytecode.Instructions) {
 		instr := vm.bytecode.Instructions[vm.ip]
 		vm.ip++
-		//fmt.Printf("Executing instruction %s\n", instr.String())
 		switch instr.Opcode {
-		case OP_CONST:
-			// Загружаем константу на стек
+		case OpConst:
 			constIndex := instr.Operands[0]
 			if constIndex >= len(vm.bytecode.Constants) {
 				return fmt.Errorf("constant index out of bounds: %d", constIndex)
@@ -84,19 +77,18 @@ func (vm *VM) Run() error {
 			value := vm.bytecode.Constants[constIndex]
 			vm.push(Value{Data: value})
 
-		case OP_LOAD:
-			// Загружаем локальную переменную
+		case OpLoad:
 			localIndex := instr.Operands[0]
 			if vm.fp < 0 || vm.fp >= len(vm.frames) {
 				return fmt.Errorf("invalid frame pointer: %d", vm.fp)
 			}
-			// ensure locals capacity
 			currentFrame := &vm.frames[vm.fp]
-			//currentFrame.ensureLocalsSize(localIndex + 1)
+			if localIndex >= len(currentFrame.locals) {
+				return fmt.Errorf("local index out of bounds: %d", localIndex)
+			}
 			vm.push(currentFrame.locals[localIndex])
 
-		case OP_STORE:
-			// Сохраняем значение в локальную переменную
+		case OpStore:
 			localIndex := instr.Operands[0]
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
@@ -109,16 +101,14 @@ func (vm *VM) Run() error {
 			currentFrame.ensureLocalsSize(localIndex + 1)
 			currentFrame.locals[localIndex] = value
 
-		case OP_POP:
-			// Удаляем значение с вершины стека
+		case OpPop:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
 			vm.pop()
 
-		case OP_ADD:
+		case OpAdd:
 			if err := vm.binaryOp(func(a, b Value) Value {
-				// Сложение
 				switch a.Data.(type) {
 				case int:
 					return Value{Data: a.Data.(int) + b.Data.(int)}
@@ -131,9 +121,8 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case OP_SUB:
+		case OpSub:
 			if err := vm.binaryOp(func(a, b Value) Value {
-				// Вычитание
 				switch a.Data.(type) {
 				case int:
 					return Value{Data: a.Data.(int) - b.Data.(int)}
@@ -146,10 +135,8 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case OP_MUL:
-
+		case OpMul:
 			if err := vm.binaryOp(func(a, b Value) Value {
-				// Умножение
 				switch a.Data.(type) {
 				case int:
 					return Value{Data: a.Data.(int) * b.Data.(int)}
@@ -163,9 +150,8 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case OP_DIV:
+		case OpDiv:
 			if err := vm.binaryOp(func(a, b Value) Value {
-				// Деление
 				switch a.Data.(type) {
 				case int:
 					bInt := b.Data.(int)
@@ -185,7 +171,7 @@ func (vm *VM) Run() error {
 			}); err != nil {
 				return err
 			}
-		case OP_MOD:
+		case OpMod:
 			if err := vm.binaryOp(func(a, b Value) Value {
 				switch a.Data.(type) {
 				case int:
@@ -200,7 +186,7 @@ func (vm *VM) Run() error {
 			}); err != nil {
 				return err
 			}
-		case OP_NEG:
+		case OpNeg:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
@@ -215,45 +201,45 @@ func (vm *VM) Run() error {
 				negated = val
 			}
 			vm.push(negated)
-		case OP_LT:
+		case OpLt:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueLT(a, b) }); err != nil {
 				return err
 			}
-		case OP_LE:
+		case OpLe:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueLE(a, b) }); err != nil {
 				return err
 			}
-		case OP_EQ:
+		case OpEq:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueEQ(a, b) }); err != nil {
 				return err
 			}
-		case OP_NEQ:
+		case OpNeq:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueNEQ(a, b) }); err != nil {
 				return err
 			}
-		case OP_GT:
+		case OpGt:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueGT(a, b) }); err != nil {
 				return err
 			}
-		case OP_GE:
+		case OpGe:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueGE(a, b) }); err != nil {
 				return err
 			}
-		case OP_AND:
+		case OpAnd:
 			err := vm.binaryOp(func(a, b Value) Value {
 				return Value{Data: isTruthy(a) && isTruthy(b)}
 			})
 			if err != nil {
 				return err
 			}
-		case OP_OR:
+		case OpOr:
 			err := vm.binaryOp(func(a, b Value) Value {
 				return Value{Data: isTruthy(a) || isTruthy(b)}
 			})
 			if err != nil {
 				return err
 			}
-		case OP_NOT:
+		case OpNot:
 			// Logical NOT: pop one value and push its negation
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
@@ -261,23 +247,20 @@ func (vm *VM) Run() error {
 			val := vm.pop()
 			vm.push(Value{Data: !isTruthy(val)})
 
-		case OP_PRINT:
-			// Вывод значения
+		case OpPrint:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
 			value := vm.pop()
 			fmt.Println(value.Data)
 
-		case OP_SQRT:
-			// Вычисление квадратного корня
+		case OpSqrt:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
 			value := vm.pop()
 			switch v := value.Data.(type) {
 			case int:
-				// Преобразуем к float64 для вычисления корня
 				result := math.Sqrt(float64(v))
 				vm.push(Value{Data: result})
 			case float64:
@@ -287,16 +270,13 @@ func (vm *VM) Run() error {
 				return fmt.Errorf("SQRT operation requires int or float64")
 			}
 
-		case OP_HALT:
-			// Остановка
+		case OpHalt:
 			return nil
 
-		case OP_JMP:
-			// Безусловный переход
+		case OpJmp:
 			vm.ip = instr.Operands[0]
 
-		case OP_JMP_IF_FALSE:
-			// Условный переход
+		case OpJmpIfFalse:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
@@ -305,65 +285,39 @@ func (vm *VM) Run() error {
 				vm.ip = instr.Operands[0]
 			}
 
-		case OP_CALL:
+		case OpCall:
 			funcAddr := instr.Operands[0]
 
-			//funcTable := vm.bytecode.FuncTable
-			// получить количество аргументов с funcinfo
-			// сохранить их с стека
-			// сравнить аргуметы
-			// проверить мапу
-			//подменить на const
-			//поменять байткод
-			//переставить ip-- куда надо
-			//funcHeader := *funcTable[funcAddr]
-			//numArgs := funcHeader.ParamCount
-			//args := vm.peek(numArgs)
-			//spFunctionCall := specialFunctionCall{functionHeader: funcHeader, args: args}
-			//if _, ok := vm.cache[spFunctionCall]; ok {
-			//	val := vm.cache[spFunctionCall]
-			//	vm.
-			//}
-			// попробовать JIT компиляцию, если уже встречалась (заменили на JMP) - заново прочитать инструкцию
-			// если нет
-
-			// Создаем новый фрейм
 			frame := Frame{
 				returnIP: vm.ip,
-				basePtr:  vm.fp,
+				prevFP:   vm.fp,
 				locals:   make([]Value, 0),
 				funcInfo: vm.bytecode.FuncAddresses[funcAddr],
 			}
 
 			vm.frames = append(vm.frames, frame)
-			// FP is index of current frame (last one)
 			vm.fp = len(vm.frames) - 1
 
 			if vm.jitEnabled {
-				args := make([]Value, frame.funcInfo.ParamCount)
+				callParams := make([]Value, frame.funcInfo.ParamCount)
 				for i := 0; i < frame.funcInfo.ParamCount; i++ {
-					args[i] = vm.stack[vm.sp-i]
+					callParams[i] = vm.stack[vm.sp-i]
 				}
-				if jitResult, newIP := vm.jit.GetCompiledAddress(vm.ip-1, args); jitResult == FuncJITCompiled {
+				if jitResult, newIP := vm.jit.GetCompiledAddress(vm.ip-1, callParams); jitResult == FuncJITCompiled {
 					vm.ip = newIP
 					break
 				}
 			}
 
-			// Переходим к функции
 			vm.ip = funcAddr
 
-		case OP_RETURN:
-			// Возвращаемое значение на вершине стека
-			returnValue := vm.stack[vm.sp]
-
-			// Восстанавливаем предыдущий фрейм
+		case OpReturn:
 			if len(vm.frames) == 0 {
 				return fmt.Errorf("no frame to return to")
 			}
 			frameIndex := len(vm.frames) - 1
-			//vm.push(returnValue)
 			if vm.jitEnabled {
+				returnValue := vm.stack[vm.sp]
 				info := vm.frames[frameIndex].funcInfo
 				vm.jit.NotifyReturn(info.Address, vm.frames[frameIndex].locals[:info.ParamCount], returnValue)
 			}
@@ -373,15 +327,11 @@ func (vm *VM) Run() error {
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
-			// Восстанавливаем состояние
+			// Restore previous frame
 			vm.ip = frame.returnIP
-			vm.fp = frame.basePtr
-			// DO NOT modify sp here; stack should remain intact
+			vm.fp = frame.prevFP
 
-			// Кладем возвращаемое значение на стек
-
-		case OP_RETURN_VOID:
-			// Аналогично RETURN, но без значения
+		case OpReturnVoid:
 			if len(vm.frames) == 0 {
 				return fmt.Errorf("no frame to return to")
 			}
@@ -398,15 +348,14 @@ func (vm *VM) Run() error {
 			frame := vm.frames[len(vm.frames)-1]
 			vm.frames = vm.frames[:len(vm.frames)-1]
 
+			// Restore previous frame
 			vm.ip = frame.returnIP
-			vm.fp = frame.basePtr
-			// Пушим nil для void функций
-			//vm.push(Value{Type: ValNil})
+			vm.fp = frame.prevFP
 
-		case OP_ARRAY_ALLOC:
+		case OpArrayAlloc:
 			arrLength, ok := vm.pop().Data.(int)
 			if !ok {
-				return fmt.Errorf("ARRAY_ALLOC expected intSize")
+				return fmt.Errorf("ARRAY_ALLOC expected int size")
 			}
 			heapPointer := -1
 			newArray := &Array{arrLength, make([]Value, arrLength)}
@@ -425,13 +374,13 @@ func (vm *VM) Run() error {
 			if vm.fp < 0 || vm.fp >= len(vm.frames) {
 				return fmt.Errorf("invalid frame pointer: %d", vm.fp)
 			}
-			// ensure locals capacity
+
 			currentFrame := &vm.frames[vm.fp]
 			currentFrame.ensureLocalsSize(localIndex + 1)
 			currentFrame.locals[localIndex] = Value{Type: ValHeapPtr, Data: heapPointer}
 			vm.push(currentFrame.locals[localIndex])
 
-		case OP_ARRAY_STORE:
+		case OpArrayStore:
 			data := vm.pop()
 			arrIndex, ok := vm.pop().Data.(int)
 			if !ok {
@@ -451,7 +400,7 @@ func (vm *VM) Run() error {
 			}
 			vm.heap[heapPointer].Array[arrIndex] = data
 
-		case OP_ARRAY_LOAD:
+		case OpArrayLoad:
 			arrIndex, ok := vm.pop().Data.(int)
 			if !ok {
 				return fmt.Errorf("ARRAY_LOAD expected intSize")
@@ -478,14 +427,9 @@ func (vm *VM) Run() error {
 	return nil
 }
 
-// Вспомогательные методы
-
 func (vm *VM) push(value Value) {
 	vm.sp++
 	vm.stack[vm.sp] = value
-	//if value.Data == nil {
-	//	//fmt.Printf("Pushed: nil, instr [%d]: %s\n", vm.ip-1, vm.bytecode.Instructions[vm.ip-1].String())
-	//}
 }
 
 func (vm *VM) pop() Value {
@@ -497,28 +441,15 @@ func (vm *VM) pop() Value {
 	return value
 }
 
-func (vm *VM) pushFrame() {
-	// Сохраняем текущий фрейм
-	vm.push(Value{Data: vm.fp})
-	vm.push(Value{Data: vm.ip})
-	vm.fp = vm.sp
-}
-
-func (vm *VM) popFrame() {
-	// Восстанавливаем предыдущий фрейм
-	vm.sp = vm.fp
-	vm.ip = vm.pop().Data.(int)
-	vm.fp = vm.pop().Data.(int)
-}
-
 func (vm *VM) binaryOp(op func(Value, Value) Value) error {
 	if vm.sp < 1 {
 		return fmt.Errorf("not enough values on stack for binary operation")
 	}
 	b := vm.pop()
 	a := vm.pop()
-	//fmt.Print("+++", a, b)
+
 	result := op(a, b)
+
 	vm.push(result)
 	return nil
 }
@@ -623,7 +554,6 @@ func valueEQ(a, b Value) Value {
 }
 
 func valueNEQ(a, b Value) Value {
-	// Just invert EQ
 	eq := valueEQ(a, b)
 	if bBool, ok := eq.Data.(bool); ok {
 		return Value{Data: !bBool}

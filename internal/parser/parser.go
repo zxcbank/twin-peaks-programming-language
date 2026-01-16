@@ -5,16 +5,6 @@ import (
 	"twin-peaks-programming-language/internal/lexer"
 )
 
-var precedences = map[lexer.TokenType]int{
-	lexer.Assign: 1,
-	lexer.Or:     2,
-	lexer.And:    3,
-	lexer.Eq:     4, lexer.NotEq: 4,
-	lexer.Lt: 5, lexer.LtEq: 5, lexer.Gt: 5, lexer.GtEq: 5,
-	lexer.Plus: 6, lexer.Minus: 6,
-	lexer.Mul: 7, lexer.Div: 7, lexer.Mod: 7,
-}
-
 type Parser struct {
 	tokens    []lexer.Token
 	position  int
@@ -79,7 +69,6 @@ func (p *Parser) consume(tokenType lexer.TokenType) error {
 	return nil
 }
 
-// ParseProgram -> ParseStatement*
 func (p *Parser) ParseProgram() (*ASTNode, error) {
 	program := &ASTNode{
 		Type:     NodeProgram,
@@ -101,18 +90,15 @@ func (p *Parser) ParseProgram() (*ASTNode, error) {
 // ParseStatement -> ParseVarDecl | ParseAssignment | ParseIf | ParseFor | ParseReturn | ParseBlock | ParseExpressionStmt
 func (p *Parser) ParseStatement() (*ASTNode, error) {
 	switch {
-	// Блок
 	case p.check(lexer.LBrace):
 		return p.ParseBlock()
 
-	// Объявление переменной или массива
 	case p.check(lexer.Identifier) && (lexer.IsTypeToken(p.peek())):
 		if p.peekN(2).Type == lexer.LBracket {
 			return p.ParseArrayDecl()
 		}
 		return p.ParseVarDecl()
 
-	// Объявление указателя
 	case p.check(lexer.Identifier) && p.peek().Type == lexer.Mul:
 		return p.ParsePointerDecl()
 
@@ -120,23 +106,18 @@ func (p *Parser) ParseStatement() (*ASTNode, error) {
 	//case p.check(lexer.Identifier) && p.peek().Type == lexer.LBracket:
 	//	return p.ParseArrayDecl()
 
-	// Функция
 	case p.check(lexer.Func):
 		return p.ParseFuncDecl()
 
-	// If
 	case p.check(lexer.If):
 		return p.ParseIf()
 
-	// For
 	case p.check(lexer.For):
 		return p.ParseFor()
 
-	// Return
 	case p.check(lexer.Return):
 		return p.ParseReturn()
 
-	// Break/Continue
 	case p.check(lexer.Break) || p.check(lexer.Continue):
 		token := p.currToken
 		p.advance()
@@ -149,23 +130,19 @@ func (p *Parser) ParseStatement() (*ASTNode, error) {
 			Token: token,
 		}, nil
 
-	// Выражение (включая присваивание) с ';'
 	default:
 		expr, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
 		}
 
-		// Проверяем, является ли это присваиванием
 		if expr.Type == NodeBinaryOp && expr.Value == "=" {
-			// Это уже присваивание, просто добавим ';'
 			if err := p.consume(lexer.Semicolon); err != nil {
 				return nil, err
 			}
 			return expr, nil
 		}
 
-		// Обычное выражение с ';'
 		if err := p.consume(lexer.Semicolon); err != nil {
 			return nil, err
 		}
@@ -175,11 +152,9 @@ func (p *Parser) ParseStatement() (*ASTNode, error) {
 
 // ParseVarDecl -> identifier type ['=' expression] ';'
 func (p *Parser) ParseVarDecl() (*ASTNode, error) {
-	// Идентификатор
 	identToken := p.currToken
 	p.advance()
 
-	// Тип
 	typeNode, err := p.ParseType()
 	if err != nil {
 		return nil, err
@@ -197,15 +172,14 @@ func (p *Parser) ParseVarDecl() (*ASTNode, error) {
 		},
 	}
 
-	//// Инициализация
-	//if p.check(lexer.Assign) {
-	//	p.advance() // пропускаем =
-	//	value, err := p.ParseExpression()
-	//	if err != nil {
-	//		return nil, err
-	//	}
-	//	node.Children = append(node.Children, value)
-	//}
+	if p.check(lexer.Assign) {
+		p.advance()
+		value, err := p.ParseExpression()
+		if err != nil {
+			return nil, err
+		}
+		node.Children = append(node.Children, value)
+	}
 
 	if err := p.consume(lexer.Semicolon); err != nil {
 		return nil, err
@@ -479,14 +453,14 @@ func (p *Parser) parseUnary() (*ASTNode, error) {
 func (p *Parser) parsePrimary() (*ASTNode, error) {
 	switch p.currToken.Type {
 	case lexer.Identifier:
-		// Проверяем, не вызов ли это функции или доступ к массиву
+		// Array Access or Function Call
 		if p.peek().Type == lexer.LParen {
 			return p.parseCall()
 		} else if p.peek().Type == lexer.LBracket {
 			return p.parseArrayAccess()
 		}
 
-		// Простой идентификатор
+		// Regular Identifier
 		token := p.currToken
 		p.advance()
 		return &ASTNode{
@@ -505,7 +479,7 @@ func (p *Parser) parsePrimary() (*ASTNode, error) {
 		}, nil
 
 	case lexer.LParen:
-		p.advance() // пропускаем '('
+		p.advance() // skip '('
 		expr, err := p.ParseExpression()
 		if err != nil {
 			return nil, err
@@ -523,7 +497,7 @@ func (p *Parser) parsePrimary() (*ASTNode, error) {
 // ParseCall -> identifier '(' [ParseExpression {',' ParseExpression}] ')'
 func (p *Parser) parseCall() (*ASTNode, error) {
 	identToken := p.currToken
-	p.advance() // пропускаем идентификатор
+	p.advance() // skip идентификатор
 
 	if err := p.consume(lexer.LParen); err != nil {
 		return nil, err
@@ -536,7 +510,7 @@ func (p *Parser) parseCall() (*ASTNode, error) {
 		Children: []*ASTNode{},
 	}
 
-	// Аргументы
+	// Arguments
 	if !p.check(lexer.RParen) {
 		for {
 			arg, err := p.ParseExpression()
@@ -548,7 +522,7 @@ func (p *Parser) parseCall() (*ASTNode, error) {
 			if !p.check(lexer.Comma) {
 				break
 			}
-			p.advance() // пропускаем запятую
+			p.advance() // skip comma
 		}
 	}
 
@@ -562,7 +536,7 @@ func (p *Parser) parseCall() (*ASTNode, error) {
 // ParseArrayAccess -> identifier '[' expression ']'
 func (p *Parser) parseArrayAccess() (*ASTNode, error) {
 	identToken := p.currToken
-	p.advance() // пропускаем идентификатор
+	p.advance() // skip identifier
 
 	if err := p.consume(lexer.LBracket); err != nil {
 		return nil, err
@@ -593,7 +567,7 @@ func (p *Parser) parseArrayAccess() (*ASTNode, error) {
 // ParseReturn -> 'return' [expression] ';'
 func (p *Parser) ParseReturn() (*ASTNode, error) {
 	returnToken := p.currToken
-	p.advance() // пропускаем 'return'
+	p.advance() // skip 'return'
 
 	node := &ASTNode{
 		Type:  NodeReturn,
@@ -618,7 +592,7 @@ func (p *Parser) ParseReturn() (*ASTNode, error) {
 // ParseAssignment -> ParseExpression '=' ParseExpression
 func (p *Parser) ParseAssignment(left *ASTNode) (*ASTNode, error) {
 	assignToken := p.currToken
-	p.advance() // пропускаем '='
+	p.advance() // skip '='
 
 	right, err := p.ParseExpression()
 	if err != nil {
@@ -640,7 +614,7 @@ func (p *Parser) ParseAssignment(left *ASTNode) (*ASTNode, error) {
 // ParseIf -> 'if' '(' expression ')' block ['else' (ParseIf | block)]
 func (p *Parser) ParseIf() (*ASTNode, error) {
 	ifToken := p.currToken
-	p.advance() // пропускаем 'if'
+	p.advance() // skip 'if'
 
 	if err := p.consume(lexer.LParen); err != nil {
 		return nil, err
@@ -666,9 +640,9 @@ func (p *Parser) ParseIf() (*ASTNode, error) {
 		Children: []*ASTNode{condition, thenBlock},
 	}
 
-	// Else или else if
+	// Else or else if
 	if p.check(lexer.Else) {
-		p.advance() // пропускаем 'else'
+		p.advance() // skip 'else'
 
 		if p.check(lexer.If) {
 			elseIf, err := p.ParseIf()
@@ -691,13 +665,12 @@ func (p *Parser) ParseIf() (*ASTNode, error) {
 // ParseFor -> 'for' '(' [ParseStatement] ';' [expression] ';' [expression] ')' block
 func (p *Parser) ParseFor() (*ASTNode, error) {
 	forToken := p.currToken
-	p.advance() // пропускаем 'for'
+	p.advance() // skip 'for'
 
 	if err := p.consume(lexer.LParen); err != nil {
 		return nil, err
 	}
 
-	// Инициализация
 	var init *ASTNode
 	if !p.check(lexer.Semicolon) {
 		var err error
@@ -707,12 +680,10 @@ func (p *Parser) ParseFor() (*ASTNode, error) {
 		}
 	}
 
-	// Пропускаем первую ';'
 	if err := p.consume(lexer.Semicolon); err != nil {
 		return nil, err
 	}
 
-	// Условие
 	var condition *ASTNode
 	if !p.check(lexer.Semicolon) {
 		var err error
@@ -722,12 +693,10 @@ func (p *Parser) ParseFor() (*ASTNode, error) {
 		}
 	}
 
-	// Пропускаем вторую ';'
 	if err := p.consume(lexer.Semicolon); err != nil {
 		return nil, err
 	}
 
-	// Пост-итерация
 	var post *ASTNode
 	if !p.check(lexer.RParen) {
 		var err error
@@ -746,24 +715,23 @@ func (p *Parser) ParseFor() (*ASTNode, error) {
 		return nil, err
 	}
 
-	// Собираем children, пропуская nil
 	var children []*ASTNode
 	if init != nil {
 		children = append(children, init)
 	} else {
-		children = append(children, &ASTNode{Type: NodeBlock}) // пустой statement
+		children = append(children, &ASTNode{Type: NodeBlock}) // empty statement
 	}
 
 	if condition != nil {
 		children = append(children, condition)
 	} else {
-		children = append(children, &ASTNode{Type: NodeLiteral, Value: "true"}) // бесконечный цикл
+		children = append(children, &ASTNode{Type: NodeLiteral, Value: "true"}) // infinite loop
 	}
 
 	if post != nil {
 		children = append(children, post)
 	} else {
-		children = append(children, &ASTNode{Type: NodeBlock}) // пустой statement
+		children = append(children, &ASTNode{Type: NodeBlock}) // empty statement
 	}
 
 	children = append(children, body)
@@ -778,7 +746,7 @@ func (p *Parser) ParseFor() (*ASTNode, error) {
 // ParsePointerDecl -> identifier '*' type ['=' expression] ';'
 func (p *Parser) ParsePointerDecl() (*ASTNode, error) {
 	identToken := p.currToken
-	p.advance() // пропускаем идентификатор
+	p.advance() // skip identifier
 
 	if err := p.consume(lexer.Mul); err != nil {
 		return nil, err
@@ -801,7 +769,7 @@ func (p *Parser) ParsePointerDecl() (*ASTNode, error) {
 		},
 	}
 
-	// Инициализация
+	// Initialization
 	if p.check(lexer.Assign) {
 		p.advance()
 		value, err := p.ParseExpression()
@@ -821,7 +789,7 @@ func (p *Parser) ParsePointerDecl() (*ASTNode, error) {
 // ParseArrayDecl -> identifier '[' expression ']' type ['=' '{' expression {',' expression} '}'] ';'
 func (p *Parser) ParseArrayDecl() (*ASTNode, error) {
 	identToken := p.currToken
-	p.advance() // пропускаем идентификатор
+	p.advance() // skip identifier
 
 	typeNode, err := p.ParseType()
 	if err != nil {
@@ -854,32 +822,6 @@ func (p *Parser) ParseArrayDecl() (*ASTNode, error) {
 		},
 	}
 
-	//// Инициализация массива
-	//if p.check(lexer.Assign) {
-	//	p.advance()
-	//
-	//	if err := p.consume(lexer.LBrace); err != nil {
-	//		return nil, err
-	//	}
-	//
-	//	// Элементы массива
-	//	for !p.check(lexer.RBrace) {
-	//		elem, err := p.ParseExpression()
-	//		if err != nil {
-	//			return nil, err
-	//		}
-	//		node.Children = append(node.Children, elem)
-	//
-	//		if p.check(lexer.Comma) {
-	//			p.advance()
-	//		}
-	//	}
-	//
-	//	if err := p.consume(lexer.RBrace); err != nil {
-	//		return nil, err
-	//	}
-	//}
-
 	if err := p.consume(lexer.Semicolon); err != nil {
 		return nil, err
 	}
@@ -890,16 +832,15 @@ func (p *Parser) ParseArrayDecl() (*ASTNode, error) {
 // ParseFuncDecl -> 'fn' identifier '(' [ParseParamList] ')' [ParseType] ParseBlock
 func (p *Parser) ParseFuncDecl() (*ASTNode, error) {
 	fnToken := p.currToken
-	p.advance() // пропускаем 'fn'
+	p.advance() // skip 'fn'
 
-	// Имя функции
+	// Function name
 	if err := p.expect(lexer.Identifier); err != nil {
 		return nil, err
 	}
 	nameToken := p.currToken
 	p.advance()
 
-	// Параметры
 	if err := p.consume(lexer.LParen); err != nil {
 		return nil, err
 	}
@@ -912,9 +853,8 @@ func (p *Parser) ParseFuncDecl() (*ASTNode, error) {
 		return nil, err
 	}
 
-	// Возвращаемый тип
 	var returnType *ASTNode
-	if p.check(lexer.LBrace) { // TODO: Нужен ли void?
+	if p.check(lexer.LBrace) {
 		returnType = &ASTNode{
 			Type:  NodeIdentifier,
 			Value: "void",
@@ -927,13 +867,11 @@ func (p *Parser) ParseFuncDecl() (*ASTNode, error) {
 		}
 	}
 
-	// Тело функции
 	body, err := p.ParseBlock()
 	if err != nil {
 		return nil, err
 	}
 
-	// Создаем узел функции
 	funcNode := &ASTNode{
 		Type:  NodeFuncDecl,
 		Value: nameToken.Text,
@@ -988,7 +926,7 @@ func (p *Parser) ParseParamList() ([]*ASTNode, error) {
 		if !p.check(lexer.Comma) {
 			break
 		}
-		p.advance() // пропускаем запятую
+		p.advance() // skip comma
 	}
 
 	return params, nil
@@ -996,7 +934,6 @@ func (p *Parser) ParseParamList() ([]*ASTNode, error) {
 
 // ParseBlock -> '{' {ParseStatement} '}'
 func (p *Parser) ParseBlock() (*ASTNode, error) {
-	// Проверяем или потребляем '{'
 	if err := p.consume(lexer.LBrace); err != nil {
 		return nil, fmt.Errorf("expected '{' at line %d, got %v", p.currToken.Line, p.currToken.String())
 	}
@@ -1006,7 +943,6 @@ func (p *Parser) ParseBlock() (*ASTNode, error) {
 		Children: []*ASTNode{},
 	}
 
-	// Парсим statements до закрывающей '}'
 	for !p.check(lexer.RBrace) && !p.check(lexer.Invalid) {
 		stmt, err := p.ParseStatement()
 		if err != nil {
@@ -1017,7 +953,6 @@ func (p *Parser) ParseBlock() (*ASTNode, error) {
 		}
 	}
 
-	// Проверяем или потребляем '}'
 	if err := p.consume(lexer.RBrace); err != nil {
 		return nil, fmt.Errorf("expected '}' at line %d, got %v", p.currToken.Line, p.currToken.String())
 	}
