@@ -15,7 +15,7 @@ twin peaks programming language
 
 Унарные Операции с перменными
 ```
-    "!", "-", "*", "&"
+    "!", "-"
 ```
 
 Бинарные Операции с перменными
@@ -28,8 +28,6 @@ twin peaks programming language
 ```
     if (expr) {
     
-    } else if  {
-    
     } else {
     
     };
@@ -37,19 +35,19 @@ twin peaks programming language
 
 Цикл for 
 ```
-   for (runOnce : exitCondition : runLoop) {
+   for (runOnce ; exitCondition ; runLoop) {
 
-   };
+   }
 ```
 
 ## Функции
 Определение функции (обязательно до использования)
 ```
-    fn name(type args...)<returnType> {return (optional)};
+    fn name(args type,...) <returnType> {return (optional)};
 ```
 
 ```
-    name(args...);
+    name(args,...);
 ```
 
 ## Массивы
@@ -64,20 +62,7 @@ twin peaks programming language
     <other_identifier> = <identifier>[x];
 ```
 
-## Указатели
-```
-    <identifier> *type;
-    
-    *<identifier> = value;
-    
-    <indetifier> = &value;
-```
-
-
 ![img_1.png](img_1.png)
 ![img_2.png](img_2.png)
 
-План:
-
-![img_3.png](img_3.png)
 ![img.png](img.png)
