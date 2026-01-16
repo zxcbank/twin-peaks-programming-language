@@ -1,6 +1,9 @@
-package bytecode
+package runtime
 
-import "fmt"
+import (
+	"fmt"
+	"twin-peaks-programming-language/internal/bytecode"
+)
 
 type FuncKind int
 
@@ -12,14 +15,14 @@ const (
 )
 
 type funcJITInfo struct {
-	Kind            FuncKind
-	CompiledAddress int
-	CachedCalls     []*callInfo
+	Kind        FuncKind
+	CachedCalls []*callInfo
 }
 
 type callInfo struct {
-	args   []Value
-	result Value
+	compiledAddress int
+	args            []Value
+	result          Value
 }
 
 func (ci *callInfo) Equal(other callInfo) bool {
@@ -46,16 +49,18 @@ func findCallInfo(callInfos []*callInfo, target callInfo) (*callInfo, int) {
 type FuncAddress int
 
 type JITCompiler struct {
-	bytecode      *Bytecode
+	bytecode      *bytecode.Bytecode
 	seenFunctions map[FuncAddress]*funcJITInfo
 	pendingReturn map[FuncAddress][]*callInfo
+	printInfo     bool
 }
 
-func NewJITCompiler(bytecode *Bytecode) *JITCompiler {
+func NewJITCompiler(bytecode *bytecode.Bytecode, printInfo bool) *JITCompiler {
 	return &JITCompiler{
 		bytecode:      bytecode,
 		seenFunctions: make(map[FuncAddress]*funcJITInfo),
 		pendingReturn: make(map[FuncAddress][]*callInfo),
+		printInfo:     printInfo,
 	}
 }
 
@@ -83,8 +88,10 @@ func (jit *JITCompiler) GetCompiledAddress(callInstructionIndex int, args []Valu
 		case FuncJITCompiled:
 			for _, call := range info.CachedCalls {
 				if call.Equal(currentCallInfo) {
-					fmt.Printf("Using cached compiled function %s(%v) -> %v at address %d\n", jit.bytecode.FuncAddresses[int(funcAddr)].Name, call.args, call.result.Data, info.CompiledAddress)
-					return FuncJITCompiled, info.CompiledAddress
+					if jit.printInfo {
+						fmt.Printf("INFO: Using cached compiled function %s(%v) -> %v at address %d\n", jit.bytecode.FuncAddresses[int(funcAddr)].Name, call.args, call.result.Data, call.compiledAddress)
+					}
+					return FuncJITCompiled, call.compiledAddress
 				}
 			}
 			jit.pendingReturn[funcAddr] = append(jit.pendingReturn[funcAddr], &currentCallInfo)
@@ -94,7 +101,7 @@ func (jit *JITCompiler) GetCompiledAddress(callInstructionIndex int, args []Valu
 	}
 	for _, arg := range args {
 		if arg.Type == ValHeapPtr {
-			jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncDynamic, CompiledAddress: int(funcAddr)}
+			jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncDynamic}
 			return FuncDynamic, int(funcAddr) // cannot JIT compile functions with heap arguments
 		}
 	}
@@ -103,19 +110,19 @@ func (jit *JITCompiler) GetCompiledAddress(callInstructionIndex int, args []Valu
 	// Check if function's instructions can be JIT compiled
 	for i := int(funcAddr); i < len(jit.bytecode.Instructions); i++ {
 		inst := jit.bytecode.Instructions[i]
-		if inst.isJump() {
+		if inst.IsJump() {
 			farthestJump = max(farthestJump, inst.Operands[0])
 		}
-		if inst.isReturn() && i >= farthestJump {
+		if inst.IsReturn() && i >= farthestJump {
 			jit.pendingReturn[funcAddr] = append(jit.pendingReturn[funcAddr], &currentCallInfo)
 			jit.seenFunctions[funcAddr] = &funcJITInfo{
-				Kind:            FuncPendingCompiledReturn,
-				CompiledAddress: int(funcAddr),
+				Kind: FuncPendingCompiledReturn,
 			}
+			jit.seenFunctions[funcAddr].CachedCalls = append(jit.seenFunctions[funcAddr].CachedCalls, &currentCallInfo)
 			return FuncPendingCompiledReturn, int(funcAddr) // will compile after return value is known
 		}
 
-		if inst.Opcode == OpCall {
+		if inst.Opcode == bytecode.OpCall {
 			compilable, kind := jit.checkCallCompilable(FuncAddress(inst.Operands[0]), funcAddr)
 			if !compilable {
 				return kind, int(funcAddr)
@@ -123,8 +130,8 @@ func (jit *JITCompiler) GetCompiledAddress(callInstructionIndex int, args []Valu
 			continue
 		}
 
-		if inst.hasSideEffects() {
-			jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncDynamic, CompiledAddress: int(funcAddr)}
+		if inst.HasSideEffects() {
+			jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncDynamic}
 			return FuncDynamic, int(funcAddr) // has side effects, cannot JIT compile
 		}
 	}
@@ -142,10 +149,12 @@ func (jit *JITCompiler) NotifyReturn(funcAddrInt int, inputValues []Value, retur
 		callInfo.result = returnValue
 		funcInfo := jit.seenFunctions[funcAddr]
 		if funcInfo.Kind == FuncPendingCompiledReturn {
-			funcInfo.CompiledAddress = jit.compile(len(callInfo.args), returnValue)
+			callInfo.compiledAddress = jit.compile(len(callInfo.args), returnValue)
 		}
 		funcInfo.CachedCalls = append(funcInfo.CachedCalls, callInfo)
-		fmt.Printf("Compiling function %s(%v) -> %v at address %d\n", jit.bytecode.FuncAddresses[funcAddrInt].Name, callInfo.args, callInfo.result.Data, funcAddr)
+		if jit.printInfo {
+			fmt.Printf("INFO: Compiling function %s(%v) -> %v at address %d\n", jit.bytecode.FuncAddresses[funcAddrInt].Name, callInfo.args, callInfo.result.Data, funcAddr)
+		}
 		callInfos = append(callInfos[:idx], callInfos[idx+1:]...)
 
 		jit.pendingReturn[funcAddr] = callInfos
@@ -160,7 +169,7 @@ func (jit *JITCompiler) checkCallCompilable(calledFuncAddr, funcAddr FuncAddress
 
 	calledFuncInfo, ok := jit.seenFunctions[calledFuncAddr]
 	if !ok {
-		jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncCallingDynamic, CompiledAddress: int(funcAddr)}
+		jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncCallingDynamic}
 		return false, FuncCallingDynamic
 	}
 	if calledFuncAddr == funcAddr {
@@ -169,7 +178,7 @@ func (jit *JITCompiler) checkCallCompilable(calledFuncAddr, funcAddr FuncAddress
 
 	// called function is not compiled
 	if calledFuncInfo.Kind != FuncJITCompiled {
-		jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncCallingDynamic, CompiledAddress: int(funcAddr)}
+		jit.seenFunctions[funcAddr] = &funcJITInfo{Kind: FuncCallingDynamic}
 		return false, FuncCallingDynamic
 	}
 
@@ -179,27 +188,27 @@ func (jit *JITCompiler) checkCallCompilable(calledFuncAddr, funcAddr FuncAddress
 func (jit *JITCompiler) compile(numArgs int, returnValue Value) int {
 	compiledAddr := len(jit.bytecode.Instructions)
 	for i := range numArgs {
-		jit.emit(OpStore, i)
+		jit.emit(bytecode.OpStore, i)
 	}
 	if returnValue.Type != ValNil {
-		jit.emit(OpConst, jit.addConstant(returnValue.Data))
-		jit.emit(OpReturn)
+		jit.emit(bytecode.OpConst, jit.addConstant(returnValue.Data))
+		jit.emit(bytecode.OpReturn)
 		return compiledAddr
 	}
 
-	jit.emit(OpReturnVoid)
+	jit.emit(bytecode.OpReturnVoid)
 	return compiledAddr
 }
 
 func (jit *JITCompiler) emit(opcode byte, operands ...int) {
-	jit.bytecode.Instructions = append(jit.bytecode.Instructions, Instruction{
+	jit.bytecode.Instructions = append(jit.bytecode.Instructions, bytecode.Instruction{
 		Opcode:   opcode,
 		Operands: operands,
 	})
 }
 
 func (jit *JITCompiler) replace(index int, opcode byte, operands ...int) {
-	jit.bytecode.Instructions[index] = Instruction{
+	jit.bytecode.Instructions[index] = bytecode.Instruction{
 		Opcode:   opcode,
 		Operands: operands,
 	}
@@ -215,8 +224,8 @@ func (jit *JITCompiler) addConstant(value interface{}) int {
 	return len(jit.bytecode.Constants) - 1
 }
 
-func getCallAddress(inst Instruction) int {
-	if inst.Opcode != OpCall {
+func getCallAddress(inst bytecode.Instruction) int {
+	if inst.Opcode != bytecode.OpCall {
 		return -1
 	}
 	return inst.Operands[0]

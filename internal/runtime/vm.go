@@ -1,15 +1,16 @@
-package bytecode
+package runtime
 
 import (
 	"fmt"
 	"math"
+	bytecode2 "twin-peaks-programming-language/internal/bytecode"
 )
 
 type Frame struct {
 	locals   []Value
 	returnIP int
 	prevFP   int
-	funcInfo *FunctionInfo
+	funcInfo *bytecode2.FunctionInfo
 }
 
 // ensureLocalsSize ensures the frame has at least `required` slots in locals.
@@ -22,7 +23,7 @@ func (f *Frame) ensureLocalsSize(required int) {
 }
 
 type VM struct {
-	bytecode   *Bytecode
+	bytecode   *bytecode2.Bytecode
 	stack      []Value
 	frames     []Frame
 	heap       []*Array
@@ -49,17 +50,17 @@ type Array struct {
 	Array []Value
 }
 
-func NewVM(bytecode *Bytecode, jitEnabled bool) *VM {
+func NewVM(bytecode *bytecode2.Bytecode, jitEnabled, printInfo bool) *VM {
 	return &VM{
 		bytecode:   bytecode,
 		stack:      make([]Value, 1024*1024*1024),
 		heap:       make([]*Array, 0),
 		frames:     make([]Frame, 1),
-		ip:         bytecode.programStart,
+		ip:         bytecode.ProgramStart,
 		sp:         -1,
 		fp:         0,
 		gc:         GarbageCollector{},
-		jit:        NewJITCompiler(bytecode),
+		jit:        NewJITCompiler(bytecode, printInfo),
 		jitEnabled: jitEnabled,
 	}
 }
@@ -69,7 +70,7 @@ func (vm *VM) Run() error {
 		instr := vm.bytecode.Instructions[vm.ip]
 		vm.ip++
 		switch instr.Opcode {
-		case OpConst:
+		case bytecode2.OpConst:
 			constIndex := instr.Operands[0]
 			if constIndex >= len(vm.bytecode.Constants) {
 				return fmt.Errorf("constant index out of bounds: %d", constIndex)
@@ -77,7 +78,7 @@ func (vm *VM) Run() error {
 			value := vm.bytecode.Constants[constIndex]
 			vm.push(Value{Data: value})
 
-		case OpLoad:
+		case bytecode2.OpLoad:
 			localIndex := instr.Operands[0]
 			if vm.fp < 0 || vm.fp >= len(vm.frames) {
 				return fmt.Errorf("invalid frame pointer: %d", vm.fp)
@@ -88,7 +89,7 @@ func (vm *VM) Run() error {
 			}
 			vm.push(currentFrame.locals[localIndex])
 
-		case OpStore:
+		case bytecode2.OpStore:
 			localIndex := instr.Operands[0]
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
@@ -101,13 +102,13 @@ func (vm *VM) Run() error {
 			currentFrame.ensureLocalsSize(localIndex + 1)
 			currentFrame.locals[localIndex] = value
 
-		case OpPop:
+		case bytecode2.OpPop:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
 			vm.pop()
 
-		case OpAdd:
+		case bytecode2.OpAdd:
 			if err := vm.binaryOp(func(a, b Value) Value {
 				switch a.Data.(type) {
 				case int:
@@ -121,7 +122,7 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case OpSub:
+		case bytecode2.OpSub:
 			if err := vm.binaryOp(func(a, b Value) Value {
 				switch a.Data.(type) {
 				case int:
@@ -135,7 +136,7 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case OpMul:
+		case bytecode2.OpMul:
 			if err := vm.binaryOp(func(a, b Value) Value {
 				switch a.Data.(type) {
 				case int:
@@ -150,7 +151,7 @@ func (vm *VM) Run() error {
 				return err
 			}
 
-		case OpDiv:
+		case bytecode2.OpDiv:
 			if err := vm.binaryOp(func(a, b Value) Value {
 				switch a.Data.(type) {
 				case int:
@@ -166,12 +167,12 @@ func (vm *VM) Run() error {
 					}
 					return Value{Data: a.Data.(float64) / bFloat}
 				default:
-					return Value{Data: 0} // TODO: think about error reporting
+					return Value{Data: 0}
 				}
 			}); err != nil {
 				return err
 			}
-		case OpMod:
+		case bytecode2.OpMod:
 			if err := vm.binaryOp(func(a, b Value) Value {
 				switch a.Data.(type) {
 				case int:
@@ -181,12 +182,12 @@ func (vm *VM) Run() error {
 					}
 					return Value{Data: a.Data.(int) % bInt}
 				default:
-					return Value{Data: 0} // TODO: think about error reporting
+					return Value{Data: 0}
 				}
 			}); err != nil {
 				return err
 			}
-		case OpNeg:
+		case bytecode2.OpNeg:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
@@ -201,45 +202,45 @@ func (vm *VM) Run() error {
 				negated = val
 			}
 			vm.push(negated)
-		case OpLt:
+		case bytecode2.OpLt:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueLT(a, b) }); err != nil {
 				return err
 			}
-		case OpLe:
+		case bytecode2.OpLe:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueLE(a, b) }); err != nil {
 				return err
 			}
-		case OpEq:
+		case bytecode2.OpEq:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueEQ(a, b) }); err != nil {
 				return err
 			}
-		case OpNeq:
+		case bytecode2.OpNeq:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueNEQ(a, b) }); err != nil {
 				return err
 			}
-		case OpGt:
+		case bytecode2.OpGt:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueGT(a, b) }); err != nil {
 				return err
 			}
-		case OpGe:
+		case bytecode2.OpGe:
 			if err := vm.binaryOp(func(a, b Value) Value { return valueGE(a, b) }); err != nil {
 				return err
 			}
-		case OpAnd:
+		case bytecode2.OpAnd:
 			err := vm.binaryOp(func(a, b Value) Value {
 				return Value{Data: isTruthy(a) && isTruthy(b)}
 			})
 			if err != nil {
 				return err
 			}
-		case OpOr:
+		case bytecode2.OpOr:
 			err := vm.binaryOp(func(a, b Value) Value {
 				return Value{Data: isTruthy(a) || isTruthy(b)}
 			})
 			if err != nil {
 				return err
 			}
-		case OpNot:
+		case bytecode2.OpNot:
 			// Logical NOT: pop one value and push its negation
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
@@ -247,14 +248,14 @@ func (vm *VM) Run() error {
 			val := vm.pop()
 			vm.push(Value{Data: !isTruthy(val)})
 
-		case OpPrint:
+		case bytecode2.OpPrint:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
 			value := vm.pop()
 			fmt.Println(value.Data)
 
-		case OpSqrt:
+		case bytecode2.OpSqrt:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
@@ -270,13 +271,13 @@ func (vm *VM) Run() error {
 				return fmt.Errorf("SQRT operation requires int or float64")
 			}
 
-		case OpHalt:
+		case bytecode2.OpHalt:
 			return nil
 
-		case OpJmp:
+		case bytecode2.OpJmp:
 			vm.ip = instr.Operands[0]
 
-		case OpJmpIfFalse:
+		case bytecode2.OpJmpIfFalse:
 			if vm.sp < 0 {
 				return fmt.Errorf("stack underflow")
 			}
@@ -285,7 +286,7 @@ func (vm *VM) Run() error {
 				vm.ip = instr.Operands[0]
 			}
 
-		case OpCall:
+		case bytecode2.OpCall:
 			funcAddr := instr.Operands[0]
 
 			frame := Frame{
@@ -311,7 +312,7 @@ func (vm *VM) Run() error {
 
 			vm.ip = funcAddr
 
-		case OpReturn:
+		case bytecode2.OpReturn:
 			if len(vm.frames) == 0 {
 				return fmt.Errorf("no frame to return to")
 			}
@@ -331,7 +332,7 @@ func (vm *VM) Run() error {
 			vm.ip = frame.returnIP
 			vm.fp = frame.prevFP
 
-		case OpReturnVoid:
+		case bytecode2.OpReturnVoid:
 			if len(vm.frames) == 0 {
 				return fmt.Errorf("no frame to return to")
 			}
@@ -352,7 +353,7 @@ func (vm *VM) Run() error {
 			vm.ip = frame.returnIP
 			vm.fp = frame.prevFP
 
-		case OpArrayAlloc:
+		case bytecode2.OpArrayAlloc:
 			arrLength, ok := vm.pop().Data.(int)
 			if !ok {
 				return fmt.Errorf("ARRAY_ALLOC expected int size")
@@ -380,7 +381,7 @@ func (vm *VM) Run() error {
 			currentFrame.locals[localIndex] = Value{Type: ValHeapPtr, Data: heapPointer}
 			vm.push(currentFrame.locals[localIndex])
 
-		case OpArrayStore:
+		case bytecode2.OpArrayStore:
 			data := vm.pop()
 			arrIndex, ok := vm.pop().Data.(int)
 			if !ok {
@@ -400,7 +401,7 @@ func (vm *VM) Run() error {
 			}
 			vm.heap[heapPointer].Array[arrIndex] = data
 
-		case OpArrayLoad:
+		case bytecode2.OpArrayLoad:
 			arrIndex, ok := vm.pop().Data.(int)
 			if !ok {
 				return fmt.Errorf("ARRAY_LOAD expected intSize")

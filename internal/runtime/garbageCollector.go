@@ -1,4 +1,4 @@
-package bytecode
+package runtime
 
 type GarbageCollector struct {
 }

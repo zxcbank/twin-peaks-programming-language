@@ -53,15 +53,15 @@ func (i Instruction) String() string {
 	return fmt.Sprintf("%s %v", name, i.Operands)
 }
 
-func (i Instruction) isReturn() bool {
+func (i Instruction) IsReturn() bool {
 	return i.Opcode == OpReturn || i.Opcode == OpReturnVoid
 }
 
-func (i Instruction) isJump() bool {
+func (i Instruction) IsJump() bool {
 	return i.Opcode == OpJmp || i.Opcode == OpJmpIfFalse
 }
 
-func (i Instruction) hasSideEffects() bool {
+func (i Instruction) HasSideEffects() bool {
 	switch i.Opcode {
 	case OpPrint, OpCall, OpArrayStore, OpArrayLoad, OpHalt:
 		return true
@@ -74,7 +74,7 @@ type Bytecode struct {
 	Instructions  []Instruction
 	Constants     []interface{}
 	FuncAddresses map[int]*FunctionInfo
-	programStart  int
+	ProgramStart  int
 }
 
 // FuncContext is function's compilation context

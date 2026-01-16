@@ -75,7 +75,7 @@ func (c *Compiler) compileFuncDecl(node *parser.ASTNode) error {
 	c.labelCounter = prevLabelCounter
 
 	// Function are stored before the main program
-	c.bytecode.programStart = len(c.bytecode.Instructions)
+	c.bytecode.ProgramStart = len(c.bytecode.Instructions)
 
 	return nil
 }

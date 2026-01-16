@@ -462,13 +462,9 @@ print(ret);
 		return fibonacci(n - 1) + fibonacci(n - 2);
 	}
 	result int;
-	//i int;
-	//for (i = 1; i < 10; i = i + 1) {
-	//	result = fibonacci(i);
-	//	print(result);
-	//}
-	result = fibonacci(10);
-	result = fibonacci(10);
+	result = fibonacci(33);
+	print(result);
+	result = fibonacci(32);
 	print(result);
 `
 )

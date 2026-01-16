@@ -3,14 +3,17 @@ package main
 import (
 	"fmt"
 	"strings"
-	"twin-peaks-programming-language/internal/code_execution/bytecode"
+	"twin-peaks-programming-language/internal/bytecode"
 	"twin-peaks-programming-language/internal/lexer"
 	"twin-peaks-programming-language/internal/parser"
+	"twin-peaks-programming-language/internal/runtime"
 )
+
+const PrintInfo = false
 
 func main() {
 	//code, err := io.ReadAll(os.Stdin)
-	code := nbody
+	code := factorial
 
 	l := lexer.NewLexer(string(code))
 	tokens, err := l.Tokenize()
@@ -19,12 +22,14 @@ func main() {
 		return
 	}
 
-	fmt.Println("Tokens:")
-	tokenStrs := make([]string, len(tokens))
-	for i, tok := range tokens {
-		tokenStrs[i] = tok.String()
+	if PrintInfo {
+		fmt.Println("Tokens:")
+		tokenStrs := make([]string, len(tokens))
+		for i, tok := range tokens {
+			tokenStrs[i] = tok.String()
+		}
+		fmt.Println(strings.Join(tokenStrs, "\n"))
 	}
-	fmt.Println(strings.Join(tokenStrs, "\n"))
 
 	p := parser.NewParser(tokens)
 	ast, err := p.ParseProgram()
@@ -43,23 +48,26 @@ func main() {
 		return
 	}
 
-	fmt.Println("\nBytecode:")
-	for i, instr := range bc.Instructions {
-		fmt.Printf("%4d: %s\n", i, instr.String())
-	}
+	if PrintInfo {
+		fmt.Println("\nBytecode:")
+		for i, instr := range bc.Instructions {
+			fmt.Printf("%4d: %s\n", i, instr.String())
+		}
+		fmt.Println("\nConstants:")
+		for i, constant := range bc.Constants {
+			fmt.Printf("%4d: %v\n", i, constant)
+		}
+		fmt.Println("\nExecution:")
 
-	fmt.Println("\nConstants:")
-	for i, constant := range bc.Constants {
-		fmt.Printf("%4d: %v\n", i, constant)
 	}
-
-	fmt.Println("\nExecution:")
-	virtualMachine := bytecode.NewVM(bc, true)
+	virtualMachine := runtime.NewVM(bc, true, PrintInfo)
 
 	if err := virtualMachine.Run(); err != nil {
 
 		fmt.Printf("VM error: %v\n", err)
 	}
 
-	virtualMachine.PrintHeapSize()
+	if PrintInfo {
+		virtualMachine.PrintHeapSize()
+	}
 }
